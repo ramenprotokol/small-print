@@ -10,6 +10,8 @@ Within a line, clauses are sentences, with legal-text care:
 * abbreviations ("e.g.", "Inc.", "U.S.", "No.") and section numbers
   ("Section 4.2") do not end a sentence;
 * an inline list ("...; (b) ...; and (c) ...") splits at each item;
+* a short inline heading ("1. Acceptance. By using ...", "Fees. You pay
+  ...") joins the sentence after it instead of becoming its own clause;
 * fragments shorter than ``MIN_CLAUSE`` characters merge into a neighbour,
   and sentences longer than ``MAX_CLAUSE`` split at semicolons if possible.
 """
@@ -21,11 +23,12 @@ from dataclasses import dataclass
 
 # Bump when segmentation output changes: it is part of the cache key, so old
 # cached offsets are never applied to new clause boundaries.
-SEGMENTER_VERSION = "seg-1"
+SEGMENTER_VERSION = "seg-2"
 
 MIN_CLAUSE = 12
 MAX_CLAUSE = 900
 MIN_SPLIT_PIECE = 200
+MAX_TITLE_WORDS = 3
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,25 @@ def is_heading(line: str) -> bool:
     return True
 
 
+def _is_title_fragment(fragment: str) -> bool:
+    """Whether a sentence-like piece is really a short inline heading:
+    "1. Acceptance.", "Governing Law.", "FEES." (at most three words after
+    any numbering, ending in a full stop, in title case or capitals)."""
+    if not fragment.endswith("."):
+        return False
+    body = _NUMBERING.sub("", fragment, count=1)
+    words = [w.strip("()[]\"'“”,&-.") for w in body.split()]
+    words = [w for w in words if w]
+    if not 1 <= len(words) <= MAX_TITLE_WORDS or not words[0][0].isupper():
+        return False
+    for w in words[1:]:
+        if w.lower() in _SMALL_WORDS or len(w) < 4:
+            continue
+        if not w[0].isupper():
+            return False
+    return True
+
+
 def _is_abbreviation(line: str, dot: int, line_start_token: bool) -> bool:
     m = _TOKEN_BEFORE.search(line[: dot + 1])
     if not m:
@@ -170,9 +192,20 @@ def _clauses_in_line(text: str, start: int, end: int) -> list[tuple[int, int]]:
         if e > s:
             raw.append((s, e))
 
+    # An inline heading carries forward into the sentence it introduces.
+    titled: list[tuple[int, int]] = []
+    carry: int | None = None
+    for i, (s, e) in enumerate(raw):
+        start = s if carry is None else carry
+        carry = None
+        if i + 1 < len(raw) and _is_title_fragment(text[s:e]):
+            carry = start
+            continue
+        titled.append((start, e))
+
     merged: list[tuple[int, int]] = []
     pending: int | None = None  # start of a too-short run waiting for more
-    for s, e in raw:
+    for s, e in titled:
         if pending is not None:
             s = pending
             pending = None
@@ -181,7 +214,7 @@ def _clauses_in_line(text: str, start: int, end: int) -> list[tuple[int, int]]:
             continue
         merged.append((s, e))
     if pending is not None:
-        tail_end = raw[-1][1]
+        tail_end = titled[-1][1]
         if merged:
             merged[-1] = (merged[-1][0], tail_end)
         else:

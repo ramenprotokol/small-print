@@ -5,17 +5,27 @@ reading is kept only if its quote is an exact substring of the normalised
 text (a plain ``str.find``: no fuzzy matching, no whitespace or case
 folding). Everything else is dropped and counted, with a reason.
 
+A quote must lie wholly inside one clause. A label rests on the words of
+the clause it labels, never on the words of a neighbour, so a quote that
+runs past the end of its clause (into the next clause, or across a line
+break into a heading) is dropped as ``crosses_clause``. Clauses never
+contain a line break, so any quote with one is dropped the same way.
+
 Placement rules for a quote that is found:
 
-1. If it occurs starting inside the clause the model named, it is placed
+1. If it occurs wholly inside the clause the model named, it is placed
    there.
 2. Otherwise, if it occurs exactly once in the whole text, it is moved to the
-   clause where that occurrence starts ("relocated"): the quote, not the
-   model's clause number, is the evidence.
-3. Otherwise (several occurrences, none in the named clause) it is dropped
-   as ambiguous.
+   clause where that occurrence lies ("relocated"): the quote, not the
+   model's clause number, is the evidence. If that occurrence starts in one
+   clause and ends in another, it is dropped as ``crosses_clause``.
+3. Otherwise (several occurrences, none wholly in the named clause) it is
+   dropped as ambiguous.
 
-Each clause keeps at most one reading; later ones are dropped as duplicates.
+A quote must be at least ``MIN_QUOTE_CHARS`` characters or
+``MIN_QUOTE_WORDS`` words long (a word like "your" proves nothing), unless it
+is the whole clause. Each clause keeps at most one reading; later ones are
+dropped as duplicates.
 """
 
 from __future__ import annotations
@@ -26,7 +36,8 @@ from .segment import Segment
 
 FAVOURS = ("you", "them", "neutral", "unclear")
 CONFIDENCE = ("high", "medium", "low")
-MIN_QUOTE = 4
+MIN_QUOTE_CHARS = 15
+MIN_QUOTE_WORDS = 3
 MAX_READING = 280
 
 DROP_REASONS = {
@@ -35,6 +46,7 @@ DROP_REASONS = {
     "ambiguous": "the quote appears several times, none in the named clause",
     "duplicate": "another reading already covers that clause",
     "too_short": "the quote is too short to be evidence",
+    "crosses_clause": "the quote runs past the end of its clause",
 }
 
 
@@ -64,6 +76,10 @@ def _valid_item(item: object) -> bool:
     return bool(reading.strip())
 
 
+def _long_enough(quote: str) -> bool:
+    return len(quote) >= MIN_QUOTE_CHARS or len(quote.split()) >= MIN_QUOTE_WORDS
+
+
 def verify(text: str, segments: list[Segment], output: object) -> dict:
     """Check model output against the text.
 
@@ -84,6 +100,7 @@ def verify(text: str, segments: list[Segment], output: object) -> dict:
             return clause_segs[i]
         return None
 
+    clause_texts = {text[s.start : s.end] for s in clause_segs}
     readings: dict[int, dict] = {}
     dropped: list[dict] = []
     relocated = 0
@@ -95,17 +112,19 @@ def verify(text: str, segments: list[Segment], output: object) -> dict:
             dropped.append({"id": claimed if isinstance(claimed, int) else None, "reason": "malformed"})
             continue
         quote = item["quote"].strip()
-        if len(quote) < MIN_QUOTE:
+        if "\n" in quote:  # clauses never hold a line break
+            dropped.append({"id": claimed, "reason": "crosses_clause"})
+            continue
+        if not _long_enough(quote) and quote not in clause_texts:
             dropped.append({"id": claimed, "reason": "too_short"})
             continue
 
         seg = by_id.get(claimed)
         at = -1
-        if seg is not None:
-            found = text.find(quote, seg.start)
-            if found != -1 and found < seg.end:
-                at = found
         target = seg
+        if seg is not None:
+            # Bounded search: the whole quote must lie inside the clause.
+            at = text.find(quote, seg.start, seg.end)
         if at == -1:
             first = text.find(quote)
             if first == -1:
@@ -115,8 +134,11 @@ def verify(text: str, segments: list[Segment], output: object) -> dict:
                 dropped.append({"id": claimed, "reason": "ambiguous"})
                 continue
             target = clause_at(first)
-            if target is None:  # found, but inside a heading or a gap
+            if target is None:  # found, but it starts inside a heading
                 dropped.append({"id": claimed, "reason": "not_found"})
+                continue
+            if first + len(quote) > target.end:
+                dropped.append({"id": claimed, "reason": "crosses_clause"})
                 continue
             at = first
             relocated += 1

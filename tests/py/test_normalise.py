@@ -67,3 +67,15 @@ def test_cache_key_is_sha256_of_normalised_text_and_ignores_noise():
 
 def test_cache_key_changes_with_meaningful_text():
     assert text_sha256(normalise("You may cancel.")) != text_sha256(normalise("You may not cancel."))
+
+
+def test_lowercase_list_markers_start_their_own_line():
+    assert normalise("Restrictions apply to\ni. copying the app") == "Restrictions apply to\ni. copying the app"
+    assert normalise("You agree not to\nii) resell storage") == "You agree not to\nii) resell storage"
+    assert normalise("The following applies\na. Definitions") == "The following applies\na. Definitions"
+    assert normalise("and in particular\nb) Payment Terms") == "and in particular\nb) Payment Terms"
+    assert normalise("see the list\nviii. the last item") == "see the list\nviii. the last item"
+
+
+def test_ordinary_wrapped_lines_still_rejoin():
+    assert normalise("We may keep a copy\nof your files for backup.") == "We may keep a copy of your files for backup."

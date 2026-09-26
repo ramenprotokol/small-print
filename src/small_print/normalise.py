@@ -36,8 +36,11 @@ _MANY_BREAKS = re.compile(r"\n{3,}")
 # A line break inside a sentence: the line does not end in terminal or
 # list-introducing punctuation, and the next line starts with a lowercase
 # letter. Conservative on purpose: headings and new paragraphs start with a
-# capital, list items with a marker, so they are left alone.
-_SOFT_WRAP = re.compile(r"(?<=[^\s.!?:;])\n(?=[a-z])")
+# capital, and a line that opens with a lowercase list marker ("a. ", "b) ",
+# "iv. ") is a list item or a sub-heading, never the rest of a sentence.
+_SOFT_WRAP = re.compile(
+    r"(?<=[^\s.!?:;])\n(?=[a-z])(?![a-z]{1,4}[.)]\s)(?![ivx]+[.)]\s)"
+)
 _LINE_SEP = chr(0x2028)
 _PARA_SEP = chr(0x2029)
 

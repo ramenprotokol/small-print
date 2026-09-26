@@ -134,3 +134,34 @@ def test_demo_documents_segment_to_expected_sizes():
 def test_empty_text_has_no_segments():
     assert segment("") == []
     assert segment("\n\n") == []
+
+
+def test_short_inline_heading_joins_the_sentence_it_introduces():
+    t = "1. Acceptance. By using the Service you agree to these Terms.\n2. Governing Law. The laws of Examplia apply."
+    assert clause_texts(t) == [
+        "1. Acceptance. By using the Service you agree to these Terms.",
+        "2. Governing Law. The laws of Examplia apply.",
+    ]
+    t = "FEES. You pay every month in advance. Refunds. We refund unused months on request."
+    assert clause_texts(t) == [
+        "FEES. You pay every month in advance.",
+        "Refunds. We refund unused months on request.",
+    ]
+
+
+def test_real_short_sentences_are_not_taken_for_headings():
+    t = "We agree to host your files. You agree to pay for the storage you use."
+    assert clause_texts(t) == ["We agree to host your files.", "You agree to pay for the storage you use."]
+    t = "Payments are final. You may cancel before the next billing date."
+    assert clause_texts(t) == ["Payments are final.", "You may cancel before the next billing date."]
+    # A heading-like fragment at the end of a line has nothing to join, and
+    # stays as it was.
+    t = "You may cancel at any time. Governing Law."
+    assert clause_texts(t) == ["You may cancel at any time.", "Governing Law."]
+
+
+def test_lettered_and_roman_list_lines_stay_separate_clauses():
+    t = normalise("You agree not to:\na. copy the service\nb. resell it\nRestrictions\ni. you may not lease it")
+    assert [x[2] for x in texts(t)] == [
+        "You agree not to:", "a. copy the service", "b. resell it", "Restrictions", "i. you may not lease it",
+    ]

@@ -2,7 +2,7 @@ import pytest
 
 from small_print.normalise import normalise
 from small_print.segment import segment
-from small_print.verify import MAX_READING, ModelOutputError, verify, with_quotes
+from small_print.verify import MAX_READING, MIN_QUOTE_CHARS, ModelOutputError, verify, with_quotes
 
 TEXT = normalise(
     "1. Your Files\n"
@@ -107,8 +107,73 @@ def test_malformed_entries_are_dropped(bad):
 
 
 def test_too_short_quote_is_not_evidence():
-    r = verify(TEXT, SEGS, {"clauses": [item(1, "You")]})
-    assert r["dropped_reasons"] == {"too_short": 1}
+    for quote in ("You", "your", "your files", "in writing"):
+        r = verify(TEXT, SEGS, {"clauses": [item(1, quote)]})
+        assert r["dropped_reasons"] == {"too_short": 1}, quote
+
+
+def test_quote_of_three_words_or_fifteen_characters_is_enough():
+    r = verify(TEXT, SEGS, {"clauses": [item(4, "at any time"), item(1, "ownership of everything"[:MIN_QUOTE_CHARS])]})
+    assert r["verified"] == 2  # three short words; fifteen characters in two words
+
+
+def test_a_short_clause_quoted_whole_is_evidence():
+    text = normalise("Fees apply.\nWe may change the fees whenever we like.")
+    segs = segment(text)
+    r = verify(text, segs, {"clauses": [item(1, "Fees apply.")]})
+    assert r["verified"] == 1
+
+
+# -- quotes must stay inside their clause -----------------------------------
+CROSS = normalise(
+    "TERMINATION\n"
+    "We may terminate your account at any time. We will refund any unused fees within 30 days.\n"
+    "PAYMENT\n"
+    "You must pay all fees up front."
+)
+CROSS_SEGS = segment(CROSS)
+# Clauses: 1 terminate, 2 refund, 3 pay (headings TERMINATION and PAYMENT)
+
+
+def cross(items):
+    return verify(CROSS, CROSS_SEGS, {"clauses": items})
+
+
+def test_quote_running_into_the_next_clause_is_dropped():
+    r = cross([item(1, "any time. We will refund any unused fees", "you")])
+    assert r["verified"] == 0
+    assert r["dropped_reasons"] == {"crosses_clause": 1}
+
+
+def test_quote_crossing_a_line_break_and_heading_is_dropped():
+    r = cross([item(2, "within 30 days.\nPAYMENT\nYou must pay")])
+    assert r["dropped_reasons"] == {"crosses_clause": 1}
+    r = cross([item(2, "unused fees within 30 days.\nPAYMENT")])
+    assert r["dropped_reasons"] == {"crosses_clause": 1}
+
+
+def test_relocation_does_not_accept_a_quote_that_crosses_out_of_its_clause():
+    # Named clause 3; the words start in clause 1 and run into clause 2.
+    r = cross([item(3, "at any time. We will refund")])
+    assert r["verified"] == 0 and r["relocated"] == 0
+    assert r["dropped_reasons"] == {"crosses_clause": 1}
+
+
+def test_quote_ending_exactly_at_the_clause_end_is_kept():
+    whole = "We will refund any unused fees within 30 days."
+    r = cross([item(2, whole, "you"), item(1, "your account at any time.")])
+    assert r["verified"] == 2 and r["dropped"] == 0
+    by_id = {x["id"]: x for x in r["readings"]}
+    seg2 = next(s for s in CROSS_SEGS if s.id == 2)
+    assert by_id[2]["quote_end"] == seg2.end
+    seg1 = next(s for s in CROSS_SEGS if s.id == 1)
+    assert by_id[1]["quote_end"] == seg1.end
+
+
+def test_exact_boundary_quote_is_also_kept_when_relocated():
+    r = cross([item(3, "We will refund any unused fees within 30 days.")])
+    assert r["verified"] == 1 and r["relocated"] == 1
+    assert r["readings"][0]["id"] == 2
 
 
 @pytest.mark.parametrize("output", [None, [], {"clause": []}, {"clauses": "none"}, "text"])
