@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>small print: who each clause favours</title>
+  <meta name="description" content="Paste a Terms of Service; get a clause-by-clause map of who each clause favours, with the exact quote.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="sp-api" content="">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&amp;family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&amp;display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#intake-h">Skip to the form</a>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="brand">
+        <h1 class="wordmark">small <mark class="wm-mark">print</mark></h1>
+        <p class="tagline">Paste a Terms of Service. See who each clause favours, and the exact words that say so.</p>
+      </div>
+      <button id="lamp" class="lamp" type="button" aria-pressed="false">Reading lamp <span class="lamp-state">off</span></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="intake" aria-labelledby="intake-h">
+      <div class="intake-paste">
+        <h2 id="intake-h" class="section-h">The document</h2>
+        <form id="intake" novalidate>
+          <label for="paste" class="field-label">Paste the terms</label>
+          <textarea id="paste" name="terms" rows="12" spellcheck="false" autocomplete="off"
+            placeholder="Paste a Terms of Service, a privacy policy or any contract text here&#8230;"
+            aria-describedby="plan form-error"></textarea>
+          <p id="plan" class="plan" aria-live="polite"></p>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+          <div class="intake-row">
+            <button id="read" class="primary" type="submit">Read the small print</button>
+          </div>
+        </form>
+        <div id="progress" class="progress" aria-live="polite" hidden></div>
+        <p id="service-status" class="service-status" role="status" data-state="checking"></p>
+      </div>
+
+      <aside class="intake-side" aria-labelledby="exhibits-h">
+        <h2 id="exhibits-h" class="section-h">Or open an exhibit</h2>
+        <ul id="exhibits" class="exhibits"><li class="muted">Loading exhibits&#8230;</li></ul>
+        <p class="fine">Three fictional companies, with terms written for this demo and readings written by hand in the exact format the model returns. They work with no AI key at all.</p>
+        <div id="history" class="history" hidden>
+          <h3 class="side-h">Read before in this browser</h3>
+          <ul id="history-list" class="history-list"></ul>
+          <p class="fine">Kept only in this browser&#8217;s storage.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section id="result" class="result" aria-labelledby="doc-title" hidden>
+      <div class="not-advice" role="note">
+        <p class="not-advice-label">Not legal advice</p>
+        <p>small print is a reading aid. Labels and one-line readings are automated (or, for the exhibits, hand-written) and can be wrong or miss context. The highlighted words are the evidence: read them yourself, and ask a qualified lawyer before a decision that matters.</p>
+      </div>
+
+      <header class="result-head">
+        <h2 id="doc-title" class="doc-title" tabindex="-1"></h2>
+        <p id="provenance" class="provenance"></p>
+        <p id="verification" class="verification"></p>
+        <div id="notices" class="notices" hidden></div>
+        <div id="tally" class="tally" aria-label="Clauses by who they favour"></div>
+        <p class="keys"><kbd>j</kbd> / <kbd>k</kbd> next and previous clause &#183; <kbd>Esc</kbd> clear &#183; click a clause to select it</p>
+        <p id="where" class="sr-only" aria-live="polite"></p>
+      </header>
+
+      <div class="sheet">
+        <article id="doc" class="doc" aria-label="The document, marked up clause by clause"></article>
+      </div>
+    </section>
+  </main>
+
+  <div id="minimap" class="minimap" aria-hidden="true" hidden>
+    <div class="mm-track"></div>
+    <div class="mm-view"></div>
+  </div>
+
+  <footer class="colophon">
+    <div class="colophon-inner">
+      <section>
+        <h2 class="side-h">How it reads</h2>
+        <p>Your text is split into clauses by a small Python program running in a Cloudflare Worker. Each clause goes to Claude Opus 5.5, which returns who it favours, a one-line reading, a confidence and a quote. The Worker then checks every quote against your text, character for character, and drops any reading whose quote is not there. The page tells you how many were dropped.</p>
+      </section>
+      <section>
+        <h2 class="side-h">What is kept</h2>
+        <p>The Worker caches each analysis under a SHA-256 fingerprint of the text, so the same document is never paid for twice. The cache holds offsets, labels and readings, not your text, and can only be looked up by someone who already has the exact text. Nothing you paste is logged.</p>
+      </section>
+      <section>
+        <h2 class="side-h">Made by</h2>
+        <p>Ramen Protocol (ramenprotokol), built with AI assistance from Claude. The exhibits are fictional; no real company&#8217;s terms are quoted here. Not legal advice.</p>
+      </section>
+    </div>
+  </footer>
+</body>
+</html>
