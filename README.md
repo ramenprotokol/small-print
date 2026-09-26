@@ -171,3 +171,9 @@ Deploy-ready, not deployed. The owner runs every Cloudflare command through `scr
 ## Credits
 
 Built by Ramen Protocol ([ramenprotokol](https://github.com/ramenprotokol)) with AI assistance from Claude. The exhibits are fictional, and no real company's terms are quoted anywhere in this repository. Licensed MIT.
+
+**Third-party notices: nothing third-party ships in `dist/`.** Every file there is this project's own: the page's HTML, CSS and JavaScript (no libraries, no bundler), the favicon, and the demo analyses built from the fictional exhibits in `demo/`. So there is no `THIRD-PARTY-NOTICES.txt`. For completeness:
+
+- **Fonts:** Libre Caslon Text and Public Sans are loaded from Google Fonts when the page opens, not shipped. Both are under the SIL Open Font License 1.1.
+- **Worker only:** the Python Worker calls the model through the official Anthropic Python SDK, [`anthropic`](https://github.com/anthropics/anthropic-sdk-python) 1.8.0 (MIT, Copyright 2023 Anthropic, PBC). It runs on the server, vendored into `python_modules/` with its own dependencies, so none of it reaches visitors.
+- **Build and test tools** (wrangler, uv, pywrangler, pytest) never ship.
