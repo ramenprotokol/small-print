@@ -1,0 +1,22 @@
+{
+  "name": "small-print",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paste a Terms of Service; get a clause-by-clause map of who each clause favours, with the exact quote.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "uv run python scripts/build.py",
+    "test": "npm run test:py && npm run build && npm run test:js",
+    "test:py": "uv run pytest",
+    "test:js": "node --test tests/js/*.test.mjs",
+    "test:e2e": "npm run build && node scripts/e2e.mjs",
+    "dev": "npm run build && wrangler d1 migrations apply small-print-cache --local && uv run pywrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "4.141.0"
+  }
+}

@@ -1,0 +1,48 @@
+# small-print: a Python Worker (API) that also serves the static UI from dist/.
+#
+# Deliberately no account_id here: the account comes from whoever runs the
+# deploy. The owner deploys only through the guarded Ramen script (see
+# scripts/deploy.sh and the README); there is no deploy npm script.
+name = "small-print"
+main = "src/entry.py"
+compatibility_date = "2026-09-20"
+compatibility_flags = ["python_workers"]
+
+# The UI. Requests outside /api/* are served straight from dist/ and never
+# wake the Python Worker (static requests are free and use no Worker CPU).
+[assets]
+directory = "./dist"
+run_worker_first = ["/api/*"]
+
+[vars]
+# Model calls allowed per UTC day across all visitors (one call reads one
+# part of up to ~10,000 characters). 0 turns AI reading off.
+DAILY_BUDGET = "40"
+# Model calls one visitor may use per UTC day (keyed by a salted, daily
+# rotated hash of the IP address; raw IPs are never stored).
+PER_VISITOR_DAILY = "8"
+# "default" opts into Anthropic's server-side refusal fallbacks; "off" disables.
+ANTHROPIC_FALLBACKS = "default"
+# Comma-separated origins allowed to call the API cross-origin (for a Pages
+# front end on another origin). Same-origin requests need nothing here.
+ALLOWED_ORIGINS = ""
+# ANTHROPIC_API_KEY is a secret, set by the owner. Without it the app runs in
+# demo mode: segmentation, cached analyses and the bundled demo documents.
+
+# Atomic daily budget counter (SQLite-backed Durable Object; free plan).
+[[durable_objects.bindings]]
+name = "BUDGET"
+class_name = "BudgetCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetCounter"]
+
+# Analysis cache, keyed by SHA-256 of the normalised text. It stores offsets,
+# labels and one-line readings only, never the document text.
+# Replace database_id with the id printed by `wrangler d1 create small-print-cache`.
+[[d1_databases]]
+binding = "DB"
+database_name = "small-print-cache"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
