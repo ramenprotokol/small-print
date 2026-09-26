@@ -4,14 +4,17 @@ import {
   FAVOURS,
   MAX_CHARS,
   PART_CHARS,
+  REQUESTED_MODEL,
   chunkText,
   combineParts,
   cpLength,
   formatInt,
   guessTitle,
+  hasReadableText,
   htmlToText,
   looksLikeHtml,
   makeIndexer,
+  modelName,
   plural,
   prepText,
   tally,
@@ -22,9 +25,19 @@ const API = ($('meta[name="sp-api"]')?.content || '').replace(/\/$/, '');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const wideLayout = matchMedia('(min-width: 1100px)');
 const LABEL = { you: 'Favours you', them: 'Favours them', neutral: 'Neutral', unclear: 'Unclear', none: 'No reading' };
-const PART_TIMEOUT_MS = 240000;
-const HISTORY_KEY = 'sp-history';
+// How long to wait for one part. The Worker reports its own worst case (plus
+// a margin) in /api/status; this default is used until then.
+const DEFAULT_PART_TIMEOUT_S = 480;
+const HISTORY_KEY = 'sp-history-2';
 const THEME_KEY = 'sp-theme';
+const DROP_LABEL = {
+  not_found: 'not in the text word for word',
+  ambiguous: 'ambiguous (the words appear more than once)',
+  crosses_clause: 'ran past the end of their clause',
+  duplicate: 'duplicates',
+  malformed: 'malformed',
+  too_short: 'too short to count as evidence',
+};
 
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -68,7 +81,7 @@ function initTheme() {
 }
 
 // ---------------------------------------------------------------- service
-const service = { state: 'checking', budget: null };
+const service = { state: 'checking', budget: null, timeoutS: DEFAULT_PART_TIMEOUT_S };
 
 async function fetchJSON(url, options = {}, timeout = 10000) {
   const ctrl = new AbortController();
@@ -95,6 +108,9 @@ async function checkService() {
     service.budget = r.body.budget;
     service.model = r.body.model;
     service.effort = r.body.effort;
+    service.fallbacks = r.body.fallbacks !== false;
+    const t = Number(r.body.limits?.timeout_s);
+    if (Number.isFinite(t) && t > 0) service.timeoutS = t;
   } catch {
     service.state = 'offline';
   }
@@ -118,7 +134,10 @@ function renderServiceStatus() {
   } else if (service.state === 'live') {
     lead.textContent = 'AI reading is on.';
     const left = readingsLeft();
-    rest.textContent = ` Claude Opus 5.5 at ${service.effort || 'medium'} effort. ${plural(left, 'reading')} left for you today `
+    const model = modelName(service.model || REQUESTED_MODEL);
+    rest.textContent = ` ${model} at ${service.effort || 'medium'} effort`
+      + `${service.fallbacks ? `; if ${model} declines a text, another Claude model may answer` : ''}. `
+      + `${plural(left, 'reading')} left for you today `
       + `(${formatInt(service.budget.remaining)} of ${formatInt(service.budget.limit)} across all visitors); resets at 00:00 UTC. `
       + `One reading covers up to ${formatInt(PART_CHARS)} characters.`;
   } else if (service.state === 'demo') {
@@ -173,11 +192,19 @@ function formError(message) {
 }
 
 async function postPart(text) {
-  const r = await fetchJSON(`${API}/api/analyze`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text }),
-  }, PART_TIMEOUT_MS);
+  let r;
+  try {
+    r = await fetchJSON(`${API}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }, service.timeoutS * 1000);
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('The page stopped waiting for this part. The model may still have been working on it, so it may have used one of today’s readings.');
+    }
+    throw new Error('The reading service could not be reached.');
+  }
   if (!r.ok || !r.body || !Array.isArray(r.body.segments)) {
     throw new Error(r.body?.message || `The reading service answered with an error (${r.status}).`);
   }
@@ -196,7 +223,7 @@ function progressUI(parts) {
     return li;
   });
   const clock = el('p', 'progress-clock');
-  box.replaceChildren(el('p', 'progress-lead', 'Reading the small print. A model reading can take a while; nothing is lost if you wait.'), list, clock);
+  box.replaceChildren(el('p', 'progress-lead', 'Reading the small print. A model reading can take a few minutes; nothing is lost if you wait.'), list, clock);
   const t0 = performance.now();
   const tick = () => { clock.textContent = `${Math.floor((performance.now() - t0) / 1000)} s elapsed`; };
   tick();
@@ -213,6 +240,9 @@ function progressUI(parts) {
   };
 }
 
+// Reads the parts two at a time. A part that fails does not sink the rest:
+// its slot holds { failed, message, text } and the page offers to read it
+// again.
 async function readParts(parts, progress) {
   const results = new Array(parts.length);
   let next = 0;
@@ -221,13 +251,33 @@ async function readParts(parts, progress) {
       const i = next;
       next += 1;
       progress.set(i, 'reading', 'reading…');
-      results[i] = await postPart(parts[i]);
-      const a = results[i].analysis;
-      progress.set(i, 'done', a ? (a.source === 'cache' ? 'from cache' : 'read') : 'clause map only');
+      try {
+        results[i] = await postPart(parts[i]);
+        const a = results[i].analysis;
+        progress.set(i, 'done', a ? (a.source === 'cache' ? 'from cache' : 'read') : 'clause map only');
+      } catch (err) {
+        results[i] = { failed: true, message: err.message, text: parts[i] };
+        progress.set(i, 'failed', 'not read');
+      }
     }
   };
   await Promise.all([worker(), worker()]);
   return results;
+}
+
+function buildDoc(results, meta) {
+  const doc = combineParts(results);
+  Object.assign(doc, meta);
+  doc.results = results;
+  if (!doc.title) doc.title = guessTitle(doc);
+  return doc;
+}
+
+function syncBudget(doc) {
+  if (doc.budget && service.state === 'live') {
+    service.budget = doc.budget;
+    renderServiceStatus();
+  }
 }
 
 async function onSubmit(event) {
@@ -235,6 +285,7 @@ async function onSubmit(event) {
   formError('');
   const { text, converted, chars } = currentInput();
   if (!chars) return formError('Paste the terms first.');
+  if (!hasReadableText(text)) return formError('There is no readable text in that paste: only spaces or invisible characters.');
   if (chars > MAX_CHARS) return formError(`That is ${formatInt(chars)} characters; the limit is ${formatInt(MAX_CHARS)}.`);
   if (service.state === 'offline') {
     return formError('The reading service is out of reach, so pasted text cannot be read right now. The exhibits still work.');
@@ -245,23 +296,49 @@ async function onSubmit(event) {
   const progress = progressUI(parts);
   try {
     const results = await readParts(parts, progress);
-    const doc = combineParts(results);
-    doc.kind = 'pasted';
-    doc.converted = converted;
-    doc.title = guessTitle(doc);
-    if (doc.budget && service.state === 'live') {
-      service.budget = doc.budget;
-      renderServiceStatus();
+    const firstFailure = results.find((r) => r.failed);
+    if (results.every((r) => r.failed)) {
+      formError(firstFailure.message);
+      return;
     }
+    const doc = buildDoc(results, { kind: 'pasted', converted, partTexts: parts });
+    if (!doc.segments.some((s) => s.kind === 'clause') && !doc.failed) {
+      formError(doc.notices.find((n) => n.kind === 'no_clauses')?.message || 'No clauses found in that text.');
+      return;
+    }
+    syncBudget(doc);
     show(doc);
     remember(doc);
-  } catch (err) {
-    formError(err.name === 'AbortError' ? 'The reading took too long and was stopped. Try again, or a shorter text.' : err.message);
   } finally {
     progress.done();
     button.disabled = false;
     updatePlan();
   }
+}
+
+// Read one part again (after a failed request, or a model error), then
+// rebuild the document in place.
+async function retryPart(index, button) {
+  const doc = current;
+  if (!doc?.results) return;
+  const old = doc.results[index];
+  const partText = old.failed ? old.text : doc.partTexts?.[index];
+  if (!partText) return;
+  button.disabled = true;
+  button.textContent = `Reading part ${index + 1}…`;
+  let fresh;
+  try {
+    fresh = await postPart(partText);
+  } catch (err) {
+    fresh = { failed: true, message: err.message, text: partText };
+  }
+  const results = doc.results.slice();
+  results[index] = fresh;
+  const next = buildDoc(results, { kind: doc.kind, converted: doc.converted, title: doc.title, partTexts: doc.partTexts });
+  syncBudget(next);
+  show(next, { scroll: false });
+  remember(next);
+  document.getElementById(`part-${index + 1}`)?.focus({ preventScroll: false });
 }
 
 // --------------------------------------------------------------- exhibits
@@ -275,11 +352,14 @@ async function loadExhibits() {
       const b = el('button', 'exhibit');
       b.type = 'button';
       b.dataset.slug = d.slug;
-      b.append(
-        el('span', 'ex-label', `Exhibit ${d.exhibit}`),
+      const sticker = el('span', 'ex-sticker');
+      sticker.append(el('span', 'ex-word', 'Exhibit'), el('span', 'ex-letter', d.exhibit));
+      const body = el('span', 'ex-body');
+      body.append(
         el('span', 'ex-name', d.name),
         el('span', 'ex-kind', `${d.kind} · ${d.clauses} clauses · ${d.tally.them} favour them`),
       );
+      b.append(sticker, body);
       b.addEventListener('click', () => openExhibit(d, b));
       li.append(b);
       return li;
@@ -294,10 +374,7 @@ async function openExhibit(meta, button) {
   try {
     const r = await fetchJSON(`demo/${meta.slug}.json`);
     if (!r.ok) throw new Error('demo');
-    const doc = combineParts([r.body]);
-    doc.kind = 'demo';
-    doc.title = `Exhibit ${meta.exhibit}: ${meta.name}`;
-    show(doc);
+    show(buildDoc([r.body], { kind: 'demo', title: `Exhibit ${meta.exhibit}: ${meta.name}` }));
   } catch {
     formError('That exhibit could not be loaded.');
   } finally {
@@ -306,11 +383,14 @@ async function openExhibit(meta, button) {
 }
 
 // ---------------------------------------------------------------- history
+// Only complete documents are kept (a part that failed cannot be retried
+// from history).
 function remember(doc) {
-  if (!doc.readings.length) return;
+  if (!doc.readings.length || doc.failed) return;
   const key = doc.keys.join(':');
+  const { results, partTexts, ...saved } = doc; // eslint-disable-line no-unused-vars
   const list = (store(HISTORY_KEY) || []).filter((h) => h.key !== key);
-  list.unshift({ key, title: doc.title, when: new Date().toISOString(), doc });
+  list.unshift({ key, title: doc.title, when: new Date().toISOString(), doc: saved });
   while (list.length > 5 || (list.length > 1 && JSON.stringify(list).length > 1500000)) list.pop();
   store(HISTORY_KEY, list);
   renderHistory();
@@ -337,45 +417,96 @@ let current = null;
 let clauseEls = [];
 let activeIndex = -1;
 
+function partsText(nums) {
+  return `part${nums.length > 1 ? 's' : ''} ${nums.join(', ')}`;
+}
+
 function provenanceText(doc) {
   if (doc.kind === 'demo') {
     return 'Readings written by hand for this fictional document, in the same format the model returns, and checked by the same Python verifier.';
   }
-  const model = doc.model === 'claude-opus-5-5' || !doc.model ? 'Claude Opus 5.5' : doc.model;
-  const from = doc.sources.includes('cache') && !doc.sources.includes('model')
-    ? `Read earlier by ${model} and served from the cache (no new model call).`
-    : doc.sources.length ? `Read by ${model}${doc.sources.includes('cache') ? ' (some parts from the cache)' : ''}.` : '';
-  return from || 'Not read by the model: this is the clause map only.';
+  const read = doc.parts.filter((p) => p.source);
+  if (!read.length) return 'Not read by the model: this is the clause map only.';
+  const byModel = new Map();
+  for (const p of read) {
+    const name = modelName(p.model || REQUESTED_MODEL);
+    if (!byModel.has(name)) byModel.set(name, []);
+    byModel.get(name).push(p.part);
+  }
+  const multi = doc.parts.length > 1;
+  const who = [...byModel].map(([name, nums]) => (multi ? `${name} (${partsText(nums)})` : name)).join(' and ');
+  const fallback = read.some((p) => p.model && p.model !== REQUESTED_MODEL)
+    ? ` ${modelName(REQUESTED_MODEL)} declined some of this text, so a fallback model answered where marked.`
+    : '';
+  const cacheOnly = read.every((p) => p.source === 'cache');
+  const cacheSome = read.some((p) => p.source === 'cache');
+  if (cacheOnly) return `Read earlier by ${who} and served from the cache (no new model call).${fallback}`;
+  return `Read by ${who}${cacheSome ? '; some parts came from the cache' : ''}.${fallback}`;
 }
 
 function verificationText(doc) {
   const s = doc.stats;
-  if (!doc.sources.length) return `${plural(doc.segments.filter((x) => x.kind === 'clause').length, 'clause')} found by the Python segmenter. No readings yet.`;
-  const reasons = Object.entries(s.reasons).map(([k, v]) => `${v} ${{
-    not_found: 'not in the text word for word',
-    ambiguous: 'ambiguous (the words appear more than once)',
-    duplicate: 'duplicates',
-    malformed: 'malformed',
-    too_short: 'too short to count as evidence',
-  }[k] || k}`);
-  let t = `${plural(s.verified, 'quote')} checked word for word against the text and kept; ${formatInt(s.dropped)} dropped`;
+  const clauses = doc.segments.filter((x) => x.kind === 'clause').length;
+  if (!doc.sources.length) return `${plural(clauses, 'clause')} found by the Python segmenter. No readings yet.`;
+  const reasons = Object.entries(s.reasons).map(([k, v]) => `${v} ${DROP_LABEL[k] || k}`);
+  let t = `${plural(s.verified, 'quote')} checked word for word against the text, each inside its own clause, and kept; ${formatInt(s.dropped)} dropped`;
   t += reasons.length ? ` (${reasons.join('; ')}).` : '.';
   if (s.relocated) t += ` ${plural(s.relocated, 'reading')} moved to the clause where the quoted words actually are.`;
   if (doc.unread) t += ` ${plural(doc.unread, 'clause')} without a reading.`;
   return t;
 }
 
-function noteFor(r, seg) {
+function refText(r, seg, doc) {
+  let t = `¶ ${seg.id} · quote at characters ${formatInt(r.quote_start)}–${formatInt(r.quote_end)}`;
+  if (doc.kind !== 'demo' && r.model) t += ` · read by ${modelName(r.model)}`;
+  return t;
+}
+
+function noteFor(r, seg, doc) {
   const note = el('span', 'note');
   note.setAttribute('role', 'note');
   note.dataset.fav = r.favours;
   note.id = `n${seg.id}`;
   const head = el('span', 'note-head');
-  head.append(el('span', 'sw'), el('span', 'note-label', LABEL[r.favours]), el('span', 'note-conf', `${r.confidence} confidence`));
-  const ref = el('span', 'note-ref', `¶ ${seg.id} · quote at characters ${formatInt(r.quote_start)}–${formatInt(r.quote_end)}`);
+  head.append(el('span', 'sw'), el('span', 'note-label', LABEL[r.favours]), el('span', 'note-conf', `, ${r.confidence} confidence.`));
+  const ref = el('span', 'note-ref', refText(r, seg, doc));
   ref.title = 'Where the highlighted quote sits in the text as shown, counted in Unicode characters from the start.';
-  note.append(head, el('span', 'note-reading', r.reading), ref);
+  // Run-in head: the label leads straight into the reading, as marginalia do.
+  const body = el('span', 'note-body');
+  body.append(head, ' ', el('span', 'note-reading', r.reading));
+  note.append(body, ref);
   return note;
+}
+
+function showPartRules(doc) {
+  return doc.parts.length > 1 || doc.parts.some((p) => p.failed || p.retryable);
+}
+
+function partRule(doc, p) {
+  const box = el('div', `part-rule${p.failed ? ' failed' : ''}${p.retryable ? ' retryable' : ''}`);
+  box.id = `part-${p.part}`;
+  box.tabIndex = -1;
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', `Part ${p.part} of ${doc.parts.length}`);
+  let status;
+  if (p.failed) status = 'not read';
+  else if (p.source) status = `${p.source === 'cache' ? 'from the cache, read by' : 'read by'} ${modelName(p.model || REQUESTED_MODEL)}`;
+  else status = p.notice === 'demo_mode' ? 'clause map only (demo mode)' : 'clause map only, no readings';
+  box.append(el('p', 'part-label', `Part ${p.part} of ${doc.parts.length} · ${formatInt(p.chars)} characters · ${status}`));
+  if (p.failed) box.append(el('p', 'part-error', p.message));
+  if ((p.failed || p.retryable) && doc.results) {
+    const again = el('button', 'retry', `Read part ${p.part} again`);
+    again.type = 'button';
+    again.addEventListener('click', () => retryPart(p.part - 1, again));
+    box.append(again);
+  }
+  if (p.failed && p.text) {
+    const more = el('details', 'part-text');
+    more.append(el('summary', null, 'Show this part’s text, unread'));
+    for (const para of p.text.split(/\n{2,}/)) more.append(el('p', null, para));
+    box.append(more);
+  }
+  return box;
 }
 
 function renderDocument(doc) {
@@ -384,14 +515,30 @@ function renderDocument(doc) {
   const u = makeIndexer(text);
   const slice = (a, b) => text.slice(u(a), u(b));
   const readings = new Map(doc.readings.map((r) => [r.id, r]));
+  const rulesAt = new Map();
+  if (showPartRules(doc)) {
+    for (const p of doc.parts) {
+      if (!rulesAt.has(p.segStart)) rulesAt.set(p.segStart, []);
+      rulesAt.get(p.segStart).push(p);
+    }
+  }
   const frag = document.createDocumentFragment();
   let line = null;
   let prevEnd = 0;
   let first = true;
   clauseEls = [];
 
-  for (const seg of doc.segments) {
-    const gap = slice(prevEnd, seg.start);
+  const flushRules = (index) => {
+    for (const p of rulesAt.get(index) || []) {
+      frag.append(partRule(doc, p));
+      line = null;
+      first = true;
+    }
+  };
+
+  doc.segments.forEach((seg, index) => {
+    flushRules(index);
+    const gap = first ? '' : slice(prevEnd, seg.start);
     const breaks = (gap.match(/\n/g) || []).length;
     const newPara = first || breaks > 1;
     if (seg.kind === 'heading') {
@@ -423,12 +570,13 @@ function renderDocument(doc) {
         span.append(slice(seg.start, seg.end));
       }
       line.append(span);
-      if (r) line.append(noteFor(r, seg));
+      if (r) line.append(noteFor(r, seg, doc));
       clauseEls.push(span);
     }
     prevEnd = seg.end;
     first = false;
-  }
+  });
+  flushRules(doc.segments.length);
   article.replaceChildren(frag);
 }
 
@@ -461,17 +609,22 @@ function renderNotices(doc) {
     if (!seen.has(n.kind)) seen.set(n.kind, { ...n, parts: [] });
     seen.get(n.kind).parts.push(n.part);
   }
-  box.replaceChildren(...[...seen.values()].map((n) => {
+  const notes = [...seen.values()].map((n) => {
     const p = el('p', 'notice');
-    const where = doc.parts > 1 ? ` (part${n.parts.length > 1 ? 's' : ''} ${n.parts.join(', ')})` : '';
+    const where = doc.parts.length > 1 ? ` (${partsText(n.parts)})` : '';
     p.textContent = n.message + where;
     return p;
-  }));
+  });
+  if (doc.failed) {
+    const nums = doc.parts.filter((p) => p.failed).map((p) => p.part);
+    notes.unshift(el('p', 'notice', `${nums.length === 1 ? 'One part' : `${nums.length} parts`} could not be read (${partsText(nums)}). The rest is below; each unread part has a button to read it again.`));
+  }
+  box.replaceChildren(...notes);
   if (doc.converted) box.append(el('p', 'notice subtle', 'This text was converted from HTML in your browser before reading; offsets count characters in the text as shown.'));
   box.hidden = !box.childElementCount;
 }
 
-function show(doc) {
+function show(doc, { scroll = true } = {}) {
   current = doc;
   activeIndex = -1;
   const section = $('#result');
@@ -485,32 +638,36 @@ function show(doc) {
   $('#where').textContent = '';
   document.body.classList.add('has-result');
   layout();
-  section.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
-  $('#doc-title').focus({ preventScroll: true });
+  if (scroll) {
+    section.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
+    $('#doc-title').focus({ preventScroll: true });
+  }
 }
 
 // ------------------------------------------------ margin notes and minimap
 // Wide screens: each note sits in the margin level with its clause. When a
 // note would collide with the one above, the text opens up (padding above
 // the clause's line) instead of the note drifting away from its clause, the
-// way annotated editions make room for marginalia. One measuring pass, one
-// writing pass.
-const NOTE_GAP = 12;
+// way annotated editions make room for marginalia. Notes for clauses that
+// share a line are set as one tight group. One measuring pass, one writing
+// pass.
+const NOTE_GAP = 10;
+const GROUP_GAP = 3;
 
 function layout() {
   if (!current) return;
   const article = $('#doc');
   const notes = [...article.querySelectorAll('.note')];
-  article.querySelectorAll('.ln, .hd').forEach((l) => { l.style.paddingTop = ''; });
+  article.querySelectorAll('.ln, .hd, .part-rule').forEach((l) => { l.style.paddingTop = ''; });
   if (wideLayout.matches) {
     const base = article.getBoundingClientRect().top;
     const measured = notes.map((n) => {
       const clause = n.previousElementSibling;
       const line = clause.parentElement;
-      // Open the space above the section heading, if the line opens a
-      // section, so a heading never drifts away from its first clause.
+      // Open the space above the section heading (or part rule), if the
+      // line opens one, so it never drifts away from its first clause.
       let pad = line;
-      while (pad.previousElementSibling?.classList.contains('hd')) pad = pad.previousElementSibling;
+      while (pad.previousElementSibling?.matches('.hd, .part-rule')) pad = pad.previousElementSibling;
       return {
         note: n,
         line,
@@ -523,7 +680,7 @@ function layout() {
     let shift = 0;
     let floor = 0;
     const pads = new Map();
-    for (const m of measured) {
+    measured.forEach((m, i) => {
       let top = m.top + shift;
       if (top < floor && m.firstInLine) {
         const extra = Math.ceil(floor - top);
@@ -533,13 +690,15 @@ function layout() {
       }
       const y = Math.max(top, floor);
       m.y = y;
-      floor = y + m.height + NOTE_GAP;
-    }
+      const sameLine = measured[i + 1]?.line === m.line;
+      m.note.classList.toggle('grouped', sameLine || measured[i - 1]?.line === m.line);
+      floor = y + m.height + (sameLine ? GROUP_GAP : NOTE_GAP);
+    });
     pads.forEach((px, line) => { line.style.paddingTop = `${px}px`; });
     measured.forEach((m) => { m.note.style.top = `${Math.round(m.y)}px`; });
     article.style.minHeight = `${Math.ceil(floor)}px`;
   } else {
-    notes.forEach((n) => { n.style.top = ''; });
+    notes.forEach((n) => { n.style.top = ''; n.classList.remove('grouped'); });
     article.style.minHeight = '';
   }
   drawMinimap();
@@ -547,11 +706,11 @@ function layout() {
 
 function drawMinimap() {
   const map = $('#minimap');
-  const track = $('#minimap .mm-track');
+  const blocks = $('#minimap .mm-blocks');
   const article = $('#doc');
   const box = article.getBoundingClientRect();
   const height = article.scrollHeight || 1;
-  track.replaceChildren(...clauseEls.map((c) => {
+  blocks.replaceChildren(...clauseEls.map((c) => {
     const rects = c.getClientRects();
     if (!rects.length) return el('i');
     const top = rects[0].top - box.top;
@@ -564,6 +723,7 @@ function drawMinimap() {
   }));
   map.hidden = false;
   updateMinimapView();
+  placeTick();
 }
 
 function updateMinimapView() {
@@ -578,9 +738,24 @@ function updateMinimapView() {
   view.style.height = `${size * 100}%`;
 }
 
+// A tick on the strip marks the selected clause.
+function placeTick() {
+  const tick = $('#minimap .mm-tick');
+  const c = clauseEls[activeIndex];
+  const rect = c?.getClientRects()[0];
+  if (!rect) {
+    tick.hidden = true;
+    return;
+  }
+  const article = $('#doc');
+  const top = rect.top - article.getBoundingClientRect().top;
+  tick.style.top = `${(top / (article.scrollHeight || 1)) * 100}%`;
+  tick.hidden = false;
+}
+
 function onMinimapClick(event) {
-  const map = event.currentTarget.getBoundingClientRect();
-  const frac = (event.clientY - map.top) / map.height;
+  const track = event.currentTarget.querySelector('.mm-track').getBoundingClientRect();
+  const frac = Math.max(0, Math.min(1, (event.clientY - track.top) / track.height));
   const article = $('#doc');
   const top = article.getBoundingClientRect().top + scrollY;
   scrollTo({ top: top + frac * article.scrollHeight - innerHeight / 2, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
@@ -595,16 +770,19 @@ function setActive(i) {
   }
   activeIndex = i;
   const c = clauseEls[i];
+  placeTick();
   if (!c) {
     $('#where').textContent = '';
     return;
   }
   c.classList.add('active');
-  document.getElementById(`n${c.dataset.id}`)?.classList.add('active');
+  const note = document.getElementById(`n${c.dataset.id}`);
+  note?.classList.add('active');
   c.focus({ preventScroll: true });
   c.scrollIntoView({ block: 'center', behavior: reducedMotion.matches ? 'auto' : 'smooth' });
   const fav = c.dataset.fav;
-  $('#where').textContent = `Clause ${c.dataset.id} of ${clauseEls.length}: ${LABEL[fav].toLowerCase()}.`;
+  const ref = note?.querySelector('.note-ref')?.textContent;
+  $('#where').textContent = `Clause ${c.dataset.id} of ${clauseEls.length}: ${LABEL[fav].toLowerCase()}.${ref ? ` ${ref.replace(/^¶ \d+ · /, '')}.` : ''}`;
 }
 
 function step(delta) {
@@ -646,6 +824,19 @@ function onDocClick(event) {
   if (c && !getSelection().toString()) setActive(clauseEls.indexOf(c));
 }
 
+// The quote offsets (and, for read documents, the model) live behind one
+// disclosure for the whole page, so notes stay short; the selected clause's
+// note always shows them.
+function initOffsets() {
+  const btn = $('#offsets');
+  btn.addEventListener('click', () => {
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    btn.setAttribute('aria-pressed', String(on));
+    $('#doc').classList.toggle('show-refs', on);
+    layout();
+  });
+}
+
 // ------------------------------------------------------------------- boot
 function debounce(fn, ms) {
   let t;
@@ -657,6 +848,7 @@ function debounce(fn, ms) {
 
 function boot() {
   initTheme();
+  initOffsets();
   $('#intake').addEventListener('submit', onSubmit);
   $('#paste').addEventListener('input', debounce(updatePlan, 120));
   document.addEventListener('keydown', onKey);

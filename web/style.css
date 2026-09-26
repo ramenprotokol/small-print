@@ -17,6 +17,14 @@
   --focus: #1f4fd6;
   --shadow: 0 1px 2px rgba(20, 20, 30, 0.06), 0 12px 32px -18px rgba(20, 20, 30, 0.28);
   --lamp: none;
+  --lamp-glow: rgba(255, 255, 255, 0);
+  --sheet-lamp: none;
+  --strip: 16px;
+  /* Exhibit stickers: the yellow label a court clerk puts on filed evidence. */
+  --sticker: #fff1a0;
+  --sticker-edge: #c9a93a;
+  --sticker-ink: #1d2553;
+  --fold: #e4e1d8;
 
   /* Highlighter inks (quote marks) and the lighter wash over each clause. */
   --mk-them: #ffadc8;
@@ -40,13 +48,19 @@
     --paper: #1a1611;
     --paper-raised: #221d16;
     --ink: #efe6d6;
-    --muted: #b9ad98;
+    --muted: #c2b6a1;
     --rule: #3b342a;
     --rule-strong: #cfc4b0;
     --margin-rule: rgba(232, 96, 96, 0.45);
     --focus: #8fb4ff;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
-    --lamp: radial-gradient(ellipse 70% 55% at 50% -8%, rgba(255, 190, 110, 0.13), transparent 70%);
+    --lamp: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255, 190, 110, 0.16), transparent 72%);
+    --lamp-glow: rgba(255, 196, 120, 0.15);
+    --sheet-lamp: radial-gradient(ellipse 46% 60% at 36% 48%, var(--lamp-glow), rgba(255, 196, 120, 0.05) 58%, transparent 82%);
+    --sticker: #4a3f14;
+    --sticker-edge: #8f7a2e;
+    --sticker-ink: #f7eecb;
+    --fold: #2c251c;
     --mk-them: #7e2f4d;
     --mk-you: #2e6340;
     --mk-unclear: #6b5814;
@@ -67,13 +81,19 @@
   --paper: #1a1611;
   --paper-raised: #221d16;
   --ink: #efe6d6;
-  --muted: #b9ad98;
+  --muted: #c2b6a1;
   --rule: #3b342a;
   --rule-strong: #cfc4b0;
   --margin-rule: rgba(232, 96, 96, 0.45);
   --focus: #8fb4ff;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
-  --lamp: radial-gradient(ellipse 70% 55% at 50% -8%, rgba(255, 190, 110, 0.13), transparent 70%);
+  --lamp: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255, 190, 110, 0.16), transparent 72%);
+  --lamp-glow: rgba(255, 196, 120, 0.15);
+  --sheet-lamp: radial-gradient(ellipse 46% 60% at 36% 48%, var(--lamp-glow), rgba(255, 196, 120, 0.05) 58%, transparent 82%);
+  --sticker: #4a3f14;
+  --sticker-edge: #8f7a2e;
+  --sticker-ink: #f7eecb;
+  --fold: #2c251c;
   --mk-them: #7e2f4d;
   --mk-you: #2e6340;
   --mk-unclear: #6b5814;
@@ -207,20 +227,52 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .pp-size { color: var(--muted); font-variant-numeric: tabular-nums; }
 .progress-parts li[data-state="reading"] .pp-state { font-weight: 700; }
 .progress-parts li[data-state="done"] .pp-state::before { content: "\2713\00a0"; }
+.progress-parts li[data-state="failed"] .pp-state { color: var(--notice); font-weight: 700; }
 .progress-clock { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .exhibits, .history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
-.exhibit, .history-item {
-  width: 100%; text-align: left; cursor: pointer; color: var(--ink);
-  background: var(--paper); border: 1px solid var(--rule); border-left: 3px solid var(--rule-strong);
-  border-radius: 1px; padding: 0.8rem 1rem 0.85rem; box-shadow: var(--shadow);
-  display: grid; gap: 0.15rem; font: inherit;
+.exhibits { gap: 1.1rem; padding-right: 6px; }
+/* Each exhibit is a filed document: a sheet on a second sheet, one corner
+   folded down, with the clerk's exhibit sticker on it. */
+.exhibits li { position: relative; }
+.exhibits li:not(.muted)::before {
+  content: ""; position: absolute; inset: 5px -5px -5px 5px;
+  background: var(--paper); border: 1px solid var(--rule);
 }
-.exhibit:hover, .history-item:hover { border-color: var(--rule-strong); }
+.exhibit {
+  position: relative; width: 100%; text-align: left; cursor: pointer; color: var(--ink); font: inherit;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: center;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 0;
+  padding: 0.8rem 1.6rem 0.85rem 0.85rem; box-shadow: var(--shadow);
+}
+.exhibit::after {
+  /* the folded corner */
+  content: ""; position: absolute; top: -1px; right: -1px; width: 1.05rem; height: 1.05rem;
+  background: linear-gradient(to bottom left, var(--desk) 50%, var(--fold) 50%);
+  box-shadow: -1px 1px 0 var(--rule);
+}
+.exhibit:hover { border-color: var(--rule-strong); }
 .exhibit:disabled { cursor: progress; opacity: 0.7; }
-.ex-label { font: 700 0.68rem/1.2 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.ex-sticker {
+  display: grid; justify-items: center; gap: 0.15rem; width: 3.7rem; padding: 0.4rem 0.3rem 0.45rem;
+  background: var(--sticker); border: 1.5px solid var(--sticker-edge); border-radius: 3px;
+  color: var(--sticker-ink); transform: rotate(-3deg); transition: transform 160ms ease;
+}
+.exhibit:hover .ex-sticker { transform: rotate(-1deg); }
+.ex-word { font: 700 0.54rem/1 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; }
+.ex-letter {
+  font: 400 1.55rem/1 var(--serif); min-width: 2rem; text-align: center;
+  border-bottom: 1px solid currentColor; padding-bottom: 0.08rem;
+}
+.ex-body { display: grid; gap: 0.2rem; }
 .ex-name { font: 400 1.3rem/1.2 var(--serif); }
 .ex-kind { font-size: 0.82rem; color: var(--muted); }
+.history-item {
+  width: 100%; text-align: left; cursor: pointer; color: var(--ink); font: inherit;
+  background: var(--paper); border: 1px solid var(--rule); border-left: 3px solid var(--rule-strong);
+  border-radius: 1px; display: grid; gap: 0.15rem;
+}
+.history-item:hover { border-color: var(--rule-strong); }
 .history { margin-top: 1.8rem; }
 .history-item { grid-template-columns: 1fr auto; align-items: baseline; padding: 0.6rem 0.8rem; box-shadow: none; }
 .hi-title { font: 400 1rem/1.3 var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -257,7 +309,14 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .tally-btn:disabled { opacity: 0.55; cursor: default; }
 .tally-btn.static { cursor: default; }
 .tally-n { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
-.keys { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.keys-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.2rem; margin: 0.6rem 0 0; }
+.keys { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.offsets {
+  font: 600 0.78rem/1 var(--sans); color: var(--ink); cursor: pointer;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; padding: 0.42rem 0.6rem;
+}
+.offsets:hover { border-color: var(--rule-strong); }
+.offsets[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 @media (max-width: 700px) and (pointer: coarse) { .keys { display: none; } }
 
 /* A short highlighter stroke, used in the tally, the notes and the legend. */
@@ -276,7 +335,11 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 
 /* ------------------------------------------------------------ the sheet */
 .sheet {
-  position: relative; background: var(--paper); box-shadow: var(--shadow);
+  position: relative; box-shadow: var(--shadow);
+  /* In the dark theme a reading lamp lights the sheet where you read: the
+     pool is fixed to the viewport, so it stays over the page as you scroll. */
+  background: var(--sheet-lamp), var(--paper);
+  background-attachment: fixed, scroll;
   padding: 2.2rem 1rem 3rem 2.4rem; margin: 0 -1rem;
 }
 .sheet::before {
@@ -329,12 +392,35 @@ mark.q {
   border-left: 3px solid var(--mk);
   font: 400 0.82rem/1.45 var(--sans); color: var(--ink); font-variant-numeric: lining-nums;
 }
-.note-head { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.15rem; }
-.note-label { font-weight: 700; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.note-body { display: block; }
+/* Run-in head: the label leads into the reading on the same line. */
+.note-head { display: inline; }
+.note-head .sw { width: 0.95rem; height: 0.52rem; margin-right: 0.35rem; vertical-align: 0.02em; }
+.note-label { font-weight: 700; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .note-conf { font-size: 0.74rem; color: var(--muted); }
-.note-reading { display: block; }
-.note-ref { display: block; margin-top: 0.2rem; font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note-ref { display: none; margin-top: 0.2rem; font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.show-refs .note-ref, .note.active .note-ref { display: block; }
 .note.hot, .note.active { background: var(--paper-raised); box-shadow: -3px 0 0 var(--ink); }
+
+/* Where one part of a long document ends and the next begins. */
+.part-rule {
+  margin: 2rem 0 0.7rem; padding: 0.55rem 0 0; border-top: 1px dashed var(--rule-strong);
+  font: 400 0.8rem/1.45 var(--sans); color: var(--muted);
+}
+.part-rule:first-child { margin-top: 0; }
+.part-rule:focus { outline: none; }
+.part-rule:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.part-label { margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+.part-rule.failed { border-top: 2px solid var(--notice); }
+.part-error { margin: 0.3rem 0 0; color: var(--notice); font-weight: 600; max-width: 36rem; }
+.retry {
+  margin-top: 0.55rem; font: 600 0.82rem/1 var(--sans); color: var(--ink); cursor: pointer;
+  background: var(--paper); border: 1px solid var(--rule-strong); border-radius: 2px; padding: 0.5rem 0.75rem;
+}
+.retry:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+.retry:disabled { cursor: progress; opacity: 0.7; }
+.part-text summary { margin-top: 0.55rem; cursor: pointer; }
+.part-text p { margin: 0.6rem 0 0; font: 400 0.98rem/1.7 var(--serif); color: var(--muted); max-width: 38rem; }
 
 @media (min-width: 1100px) {
   main { max-width: 76rem; }
@@ -342,26 +428,43 @@ mark.q {
   .doc { max-width: 38rem; }
   .sheet::before { left: 1.6rem; }
   .note {
-    position: absolute; left: calc(100% + 2.6rem); width: 18.5rem; margin: 0;
-    padding: 0.1rem 0.4rem 0.3rem 0.7rem; transition: background-color 120ms ease;
+    position: absolute; left: calc(100% + 2.6rem); width: 20.5rem; margin: 0;
+    padding: 0.12rem 0.4rem 0.22rem 0.7rem; transition: background-color 120ms ease;
   }
-  body.has-result { padding-right: 14px; }
+  /* The selected note shows its offsets over the note below it. */
+  .note.active { z-index: 2; box-shadow: -3px 0 0 var(--ink), 0 10px 24px -14px rgba(0, 0, 0, 0.45); }
 }
+body.has-result { padding-right: var(--strip); }
 
 /* ------------------------------------------------------- the edge strip */
+/* A minimap of the whole document by colour, down the right edge. */
 .minimap {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 10px; z-index: 5;
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--strip); z-index: 5;
   background: var(--paper); border-left: 1px solid var(--rule); cursor: pointer;
 }
-.mm-track { position: absolute; inset: 0.5rem 0; }
-.mm-block { position: absolute; left: 1px; right: 1px; display: block; background: var(--mk); min-height: 2px; }
+.mm-caption {
+  position: absolute; top: 0.55rem; left: 0; width: 100%;
+  writing-mode: vertical-rl; line-height: var(--strip); text-align: start;
+  font-family: var(--sans); font-weight: 700; font-size: 0.56rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted); white-space: nowrap; pointer-events: none;
+}
+.mm-track { position: absolute; top: 7.1rem; bottom: 0.5rem; left: 0; right: 0; border-top: 1px solid var(--rule); }
+.mm-blocks { position: absolute; inset: 0; }
+.mm-block { position: absolute; left: 3px; right: 3px; display: block; background: var(--mk); min-height: 2px; }
 .mm-block[data-fav="none"] { background: var(--mk-none); }
 .mm-view {
-  position: absolute; left: -1px; right: 0; margin: 0.5rem 0; pointer-events: none;
+  position: absolute; left: -1px; right: 0; pointer-events: none;
   border: 1px solid var(--ink); border-right: 0; box-shadow: 0 0 0 1px var(--paper);
 }
+/* The selected clause: a bar across the strip and a pointer beside it. */
+.mm-tick { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--ink); pointer-events: none; }
+.mm-tick::before {
+  content: ""; position: absolute; left: -8px; top: -4px;
+  border: 5px solid transparent; border-left: 7px solid var(--ink); border-right: 0;
+}
 @media (max-width: 1099px) {
-  .minimap { width: 6px; }
+  :root { --strip: 14px; }
+  .mm-caption { font-size: 0.52rem; }
 }
 
 /* ------------------------------------------------------------ colophon */
@@ -371,6 +474,7 @@ mark.q {
   display: grid; gap: 1.8rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 }
 .colophon p { margin: 0; font: 400 0.92rem/1.6 var(--serif); color: var(--muted); max-width: 34rem; }
+.colophon p + p { margin-top: 0.7rem; }
 
 @media (max-width: 520px) {
   .masthead-inner { flex-direction: column; align-items: flex-start; padding-top: 1.6rem; }
@@ -386,7 +490,8 @@ mark.q {
 }
 
 @media print {
-  .masthead .lamp, .intake, .minimap, .keys, .tally, .skip { display: none !important; }
+  .masthead .lamp, .intake, .minimap, .keys-row, .tally, .skip, .retry { display: none !important; }
+  .note-ref { display: block !important; }
   body { background: #fff; }
   .sheet { box-shadow: none; padding: 0; }
   .sheet::before { display: none; }

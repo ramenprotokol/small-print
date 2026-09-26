@@ -3,7 +3,8 @@
 // UTF-16 code units. makeIndexer bridges the two.
 
 export const MAX_CHARS = 60000; // the Worker's hard cap per document
-export const PART_CHARS = 10000; // one model call reads at most one part
+export const PART_CHARS = 10000; // one model call reads at most one part (the Worker's cap too)
+export const REQUESTED_MODEL = 'claude-opus-5-5';
 
 export function cpLength(s) {
   let n = 0;
@@ -27,8 +28,32 @@ export function makeIndexer(text) {
 }
 
 // Light clean-up before splitting; the Worker does the full normalisation.
+// Page and line separators become breaks here, as they do on the Worker, so
+// a part never grows past PART_CHARS on its way through normalisation.
 export function prepText(s) {
-  return s.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return s
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\f\u2029]/g, '\n\n')
+    .replace(/\u2028/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Characters the Worker removes (controls, zero-width marks, the BOM, soft
+// hyphens) plus every kind of space: a paste made only of these has nothing
+// to read, and is caught here instead of being sent.
+const INVISIBLE = /[\s\u0000-\u001f\u007f\u00a0\u00ad\u1680\u2000-\u200d\u2028-\u202f\u205f\u2060\u3000\ufeff]/g;
+
+export function hasReadableText(s) {
+  return s.replace(INVISIBLE, '').length > 0;
+}
+
+// "claude-opus-5-5" -> "Claude Opus 5.5". Unknown shapes come back as-is.
+export function modelName(id) {
+  if (!id) return 'the model';
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?$/.exec(id);
+  if (!m) return id;
+  return `Claude ${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ''}`;
 }
 
 const HTML_TAG = /<\/?(?:p|div|li|ul|ol|h[1-6]|br|section|article|span|a|strong|em|b|i|table|tr|td|body|html|head|main)\b[^>]*>/gi;
@@ -112,22 +137,35 @@ export function chunkText(text, max = PART_CHARS) {
   return pack(paras.flatMap((p) => splitLong(p, max)), '\n\n', max);
 }
 
+// Notices after which reading the same part again may work.
+const RETRYABLE = new Set(['model_busy', 'model_error', 'model_timeout', 'model_interrupted', 'bad_output']);
+
 // Stitch API responses for consecutive parts into one document. Offsets and
 // clause numbers are shifted so they index the combined text, which is the
-// parts' normalised texts joined by a blank line.
+// parts' normalised texts joined by a blank line. A part whose request
+// failed outright is passed as { failed: true, message, text } and
+// contributes no text, only an entry in `parts` (so the page can offer to
+// read it again). Each reading keeps the model that read its part.
 export function combineParts(responses) {
   const texts = [];
   const segments = [];
   const readings = [];
   const notices = [];
+  const parts = [];
   const sources = new Set();
+  const models = new Set();
   const stats = { received: 0, verified: 0, dropped: 0, relocated: 0, reasons: {} };
   let offset = 0;
   let idBase = 0;
-  let model = null;
   let budget = null;
   let unread = 0;
   responses.forEach((r, i) => {
+    const info = { part: i + 1, segStart: segments.length, chars: 0, clauses: 0, model: null, source: null };
+    parts.push(info);
+    if (r.failed) {
+      Object.assign(info, { failed: true, message: r.message, text: r.text, chars: cpLength(r.text || '') });
+      return;
+    }
     let maxId = 0;
     let clauseCount = 0;
     for (const s of r.segments) {
@@ -139,12 +177,16 @@ export function combineParts(responses) {
       }
       segments.push(seg);
     }
+    info.chars = cpLength(r.text);
+    info.clauses = clauseCount;
     if (r.analysis) {
       const a = r.analysis;
       sources.add(a.source);
-      model = model || a.model;
+      info.source = a.source;
+      info.model = a.model || null;
+      if (a.model) models.add(a.model);
       for (const x of a.readings) {
-        readings.push({ ...x, id: x.id + idBase, quote_start: x.quote_start + offset, quote_end: x.quote_end + offset });
+        readings.push({ ...x, id: x.id + idBase, quote_start: x.quote_start + offset, quote_end: x.quote_end + offset, model: a.model || null, part: i + 1 });
       }
       stats.received += a.received;
       stats.verified += a.verified;
@@ -155,7 +197,11 @@ export function combineParts(responses) {
     } else {
       unread += clauseCount;
     }
-    if (r.notice) notices.push({ part: i + 1, kind: r.notice.kind, message: r.notice.message });
+    if (r.notice) {
+      notices.push({ part: i + 1, kind: r.notice.kind, message: r.notice.message });
+      info.notice = r.notice.kind;
+      info.retryable = RETRYABLE.has(r.notice.kind);
+    }
     if (r.budget) budget = r.budget;
     texts.push(r.text);
     offset += cpLength(r.text) + 2;
@@ -167,12 +213,13 @@ export function combineParts(responses) {
     readings,
     stats,
     sources: [...sources],
-    model,
+    models: [...models],
     notices,
     budget,
     unread,
-    parts: responses.length,
-    keys: responses.map((r) => r.sha256),
+    parts,
+    failed: parts.filter((p) => p.failed).length,
+    keys: responses.map((r) => r.sha256 || null),
   };
 }
 

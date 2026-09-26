@@ -70,7 +70,10 @@
         <p id="verification" class="verification"></p>
         <div id="notices" class="notices" hidden></div>
         <div id="tally" class="tally" aria-label="Clauses by who they favour"></div>
-        <p class="keys"><kbd>j</kbd> / <kbd>k</kbd> next and previous clause &#183; <kbd>Esc</kbd> clear &#183; click a clause to select it</p>
+        <div class="keys-row">
+          <p class="keys"><kbd>j</kbd> / <kbd>k</kbd> next and previous clause &#183; <kbd>Esc</kbd> clear &#183; click a clause to select it</p>
+          <button id="offsets" class="offsets" type="button" aria-pressed="false" aria-controls="doc">Show quote offsets</button>
+        </div>
         <p id="where" class="sr-only" aria-live="polite"></p>
       </header>
 
@@ -81,19 +84,24 @@
   </main>
 
   <div id="minimap" class="minimap" aria-hidden="true" hidden>
-    <div class="mm-track"></div>
-    <div class="mm-view"></div>
+    <span class="mm-caption">Who it favours</span>
+    <div class="mm-track">
+      <div class="mm-blocks"></div>
+      <i class="mm-view"></i>
+      <i class="mm-tick" hidden></i>
+    </div>
   </div>
 
   <footer class="colophon">
     <div class="colophon-inner">
       <section>
         <h2 class="side-h">How it reads</h2>
-        <p>Your text is split into clauses by a small Python program running in a Cloudflare Worker. Each clause goes to Claude Opus 5.5, which returns who it favours, a one-line reading, a confidence and a quote. The Worker then checks every quote against your text, character for character, and drops any reading whose quote is not there. The page tells you how many were dropped.</p>
+        <p>Your text is split into clauses by a small Python program running in a Cloudflare Worker. The clauses go to Claude Opus 5.5, which returns, for each one, who it favours, a one-line reading, a confidence and a quote. The Worker then checks every quote against your text, character for character, and drops any reading whose quote is not inside its own clause. The page tells you how many were dropped.</p>
+        <p>If Opus 5.5 declines, another Claude model may answer; each part shows which model read it.</p>
       </section>
       <section>
         <h2 class="side-h">What is kept</h2>
-        <p>The Worker caches each analysis under a SHA-256 fingerprint of the text, so the same document is never paid for twice. The cache holds offsets, labels and readings, not your text, and can only be looked up by someone who already has the exact text. Nothing you paste is logged.</p>
+        <p>The Worker caches each analysis in which at least 80% of the clauses got a checked reading, under a SHA-256 fingerprint of the text, so the same document is not paid for twice. The cache holds offsets, labels and readings, not your text, and can only be looked up by someone who already has the exact text. Nothing you paste is logged.</p>
       </section>
       <section>
         <h2 class="side-h">Made by</h2>

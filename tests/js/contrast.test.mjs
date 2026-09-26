@@ -62,10 +62,18 @@ for (const [name, t] of [['light', light], ['dark', dark], ['dark (system)', dar
       'notice on paper': [parse(t.notice), paper],
       'paper on ink (primary button)': [paper, parse(t.ink)],
     };
+    // The reading lamp (dark theme) brightens the sheet; check text at the
+    // brightest point of its pool as well as on plain paper.
+    const lit = over(parse(t['lamp-glow']), paper);
+    pairs['ink on lamp-lit paper'] = [parse(t.ink), lit];
+    pairs['muted on lamp-lit paper'] = [parse(t.muted), lit];
+    pairs['exhibit sticker print'] = [parse(t['sticker-ink']), parse(t.sticker)];
     for (const k of ['them', 'you', 'unclear', 'neutral']) {
       pairs[`quote text on ${k} ink`] = [parse(t['on-mark']), over(parse(t[`mk-${k}`]), paper)];
-      pairs[`clause text on ${k} wash`] = [parse(t.ink), over(parse(t[`wash-${k}`]), paper)];
-      pairs[`muted clause number on ${k} wash`] = [parse(t.muted), over(parse(t[`wash-${k}`]), paper)];
+      for (const [where, base] of [['paper', paper], ['lamp-lit paper', lit]]) {
+        pairs[`clause text on ${k} wash (${where})`] = [parse(t.ink), over(parse(t[`wash-${k}`]), base)];
+        pairs[`muted clause number on ${k} wash (${where})`] = [parse(t.muted), over(parse(t[`wash-${k}`]), base)];
+      }
     }
     for (const [label, [fg, bg]] of Object.entries(pairs)) {
       const r = ratio(fg, bg);

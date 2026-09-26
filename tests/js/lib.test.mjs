@@ -6,8 +6,10 @@ import {
   combineParts,
   cpLength,
   guessTitle,
+  hasReadableText,
   looksLikeHtml,
   makeIndexer,
+  modelName,
   prepText,
   tally,
 } from '../../web/lib.js';
@@ -30,6 +32,23 @@ test('makeIndexer maps code-point offsets to string indices', () => {
 
 test('prepText normalises line endings and blank runs', () => {
   assert.equal(prepText('  a\r\nb\r\n\r\n\r\n\r\nc  '), 'a\nb\n\nc');
+  // Page and paragraph separators become breaks, as on the Worker.
+  assert.equal(prepText('a\fb\u2029c\u2028d'), 'a\n\nb\n\nc\nd');
+});
+
+test('hasReadableText rejects pastes of only spaces and invisible characters', () => {
+  assert.equal(hasReadableText('\u200b\ufeff \u00ad\n\t\u00a0\u2060\u3000'), false);
+  assert.equal(hasReadableText(''), false);
+  assert.equal(hasReadableText('\u200bTerms'), true);
+});
+
+test('modelName gives a friendly name for a model id', () => {
+  assert.equal(modelName('claude-opus-5-5'), 'Claude Opus 5.5');
+  assert.equal(modelName('claude-opus-5'), 'Claude Opus 5');
+  assert.equal(modelName('claude-opus-4-8'), 'Claude Opus 4.8');
+  assert.equal(modelName('claude-sonnet-5'), 'Claude Sonnet 5');
+  assert.equal(modelName('some-other-model'), 'some-other-model');
+  assert.equal(modelName(null), 'the model');
 });
 
 test('chunkText keeps parts under the limit and loses nothing', () => {
@@ -65,13 +84,13 @@ test('looksLikeHtml needs real tags', () => {
   assert.ok(!looksLikeHtml('A single <b>bold'));
 });
 
-function part(text, segments, readings, extra = {}) {
+function part(text, segments, readings, extra = {}, model = 'claude-opus-5-5') {
   return {
     text,
     sha256: `h${text.length}`,
     segments,
     analysis: readings ? {
-      source: 'model', model: 'claude-opus-5-5', readings, received: readings.length + 1,
+      source: 'model', model, readings, received: readings.length + 1,
       verified: readings.length, dropped: 1, dropped_reasons: { not_found: 1 }, relocated: 0,
     } : null,
     notice: null,
@@ -97,6 +116,50 @@ test('combineParts shifts offsets and clause numbers across parts', () => {
   assert.deepEqual(doc.stats.reasons, { not_found: 2 });
   assert.equal(doc.unread, 1);
   assert.deepEqual(tally(doc.readings), { you: 1, them: 1, neutral: 0, unclear: 0 });
+  assert.equal(doc.parts.length, 2);
+  assert.deepEqual(doc.parts.map((p) => p.segStart), [0, 2]);
+});
+
+test('combineParts keeps the model that read each part', () => {
+  const a = part('One clause here.', [{ kind: 'clause', id: 1, start: 0, end: 16 }],
+    [{ id: 1, favours: 'you', confidence: 'high', reading: 'r', quote_start: 0, quote_end: 10, quote: 'One clause' }]);
+  const b = part('Two clause here.', [{ kind: 'clause', id: 1, start: 0, end: 16 }],
+    [{ id: 1, favours: 'them', confidence: 'high', reading: 'r', quote_start: 0, quote_end: 10, quote: 'Two clause' }], {}, 'claude-opus-5');
+  const doc = combineParts([a, b]);
+  assert.deepEqual(doc.parts.map((p) => p.model), ['claude-opus-5-5', 'claude-opus-5']);
+  assert.deepEqual(doc.readings.map((r) => [r.id, r.model, r.part]), [[1, 'claude-opus-5-5', 1], [2, 'claude-opus-5', 2]]);
+  assert.deepEqual(doc.models, ['claude-opus-5-5', 'claude-opus-5']);
+});
+
+test('combineParts keeps the parts that worked when one part failed', () => {
+  const a = part('Aa one. Bb two.', [
+    { kind: 'clause', id: 1, start: 0, end: 7 },
+    { kind: 'clause', id: 2, start: 8, end: 15 },
+  ], [{ id: 2, favours: 'you', confidence: 'high', reading: 'r', quote_start: 8, quote_end: 14, quote: 'Bb two' }]);
+  const failed = { failed: true, message: 'The reading service could not be reached.', text: 'Middle part text.' };
+  const c = part('Cc three.', [{ kind: 'clause', id: 1, start: 0, end: 9 }],
+    [{ id: 1, favours: 'them', confidence: 'low', reading: 'r', quote_start: 0, quote_end: 8, quote: 'Cc three' }]);
+  const doc = combineParts([a, failed, c]);
+  assert.equal(doc.text, 'Aa one. Bb two.\n\nCc three.');
+  const u = makeIndexer(doc.text);
+  for (const r of doc.readings) assert.equal(doc.text.slice(u(r.quote_start), u(r.quote_end)), r.quote);
+  assert.deepEqual(doc.segments.map((s) => s.id), [1, 2, 3]);
+  assert.equal(doc.failed, 1);
+  const mid = doc.parts[1];
+  assert.equal(mid.failed, true);
+  assert.equal(mid.segStart, 2); // rendered between part 1 and part 3
+  assert.equal(mid.message, failed.message);
+  assert.equal(mid.text, failed.text);
+  assert.deepEqual(doc.keys, ['h15', null, 'h9']);
+});
+
+test('combineParts marks parts whose model call can be tried again', () => {
+  const busy = part('One clause here.', [{ kind: 'clause', id: 1, start: 0, end: 16 }], null,
+    { notice: { kind: 'model_timeout', message: 'too long' } });
+  const spent = part('Two clause here.', [{ kind: 'clause', id: 1, start: 0, end: 16 }], null,
+    { notice: { kind: 'budget_spent', message: 'spent' } });
+  const doc = combineParts([busy, spent]);
+  assert.deepEqual(doc.parts.map((p) => !!p.retryable), [true, false]);
 });
 
 test('combineParts carries notices per part and the latest budget', () => {
