@@ -3,16 +3,38 @@ SQLite and a scripted model. No network."""
 
 import json
 
+import httpx2
 import pytest
 
-from small_print.model import ModelRefused, ModelUnavailable
+from small_print.model import ModelIncomplete, ModelRefused, ModelUnavailable, worst_case_s
 from small_print.normalise import normalise
-from small_print.prompt import MODEL
+from small_print.prompt import MAX_TOKENS, MODEL
 from small_print.segment import clauses, segment
-from small_print.service import MAX_AI_CHARS, MAX_BODY_BYTES, MAX_CHARS, Config, Deps, Request, handle
+from small_print.service import (
+    MAX_AI_CHARS,
+    MAX_BODY_BYTES,
+    MAX_CHARS,
+    MAX_CLAUSES_PER_CALL,
+    Config,
+    Deps,
+    Request,
+    collect_body,
+    handle,
+)
 from small_print.verify import ModelOutputError
 
-from conftest import LedgerBudget, MemoryCache, ScriptedReader, demo_analysis, demo_text, run
+from conftest import (
+    BrokenStream,
+    LedgerBudget,
+    MemoryCache,
+    ScriptedReader,
+    demo_analysis,
+    demo_text,
+    message,
+    mock_reader,
+    run,
+    sse_body,
+)
 
 DAY = "2026-09-26"
 IP = "203.0.113.7"
@@ -158,6 +180,77 @@ def test_model_unavailable_refunds_the_budget():
     assert ledger.ledger.status(DAY, 40)["used"] == 0
 
 
+def test_timeout_through_the_real_reader_consumes_budget_and_says_so():
+    """The SDK stream times out (mocked transport): the call may have been
+    billed, so the budget unit stays spent and there is no retry."""
+    def slow(request):
+        raise httpx2.ReadTimeout("no response in time", request=request)
+
+    reader, seen = mock_reader(slow)
+    ledger = LedgerBudget()
+    logs = []
+    reply = post(TEXT, make(reader, ledger=ledger, logs=logs))
+    p = reply.payload
+    assert p["notice"]["kind"] == "model_timeout"
+    assert "counted against today's budget" in p["notice"]["message"]
+    assert p["budget"]["used"] == 1 and ledger.refunds == 0
+    assert ledger.ledger.status(DAY, 40)["used"] == 1
+    assert len(seen) == 1
+    assert json.loads(logs[-1])["error"] == "timeout"
+
+
+def test_pre_generation_5xx_through_the_real_reader_is_refunded():
+    reader, seen = mock_reader(lambda r: httpx2.Response(503, json={"type": "error", "error": {"type": "api_error", "message": "x"}}))
+    ledger = LedgerBudget()
+    reply = post(TEXT, make(reader, ledger=ledger))
+    assert reply.payload["notice"]["kind"] == "model_error"
+    assert "Nothing was taken" in reply.payload["notice"]["message"]
+    assert reply.payload["budget"]["used"] == 0 and ledger.refunds == 1
+    assert len(seen) == 1
+
+
+def test_stream_that_breaks_after_it_started_is_counted_and_not_retried():
+    head = sse_body(message([{"type": "text", "text": '{"clauses": []}'}]))[:250]
+    reader, seen = mock_reader(lambda r: httpx2.Response(
+        200, headers={"content-type": "text/event-stream"}, stream=BrokenStream(head, httpx2.ReadError("reset"))))
+    ledger = LedgerBudget()
+    reply = post(TEXT, make(reader, ledger=ledger))
+    assert reply.payload["notice"]["kind"] == "model_interrupted"
+    assert reply.payload["budget"]["used"] == 1 and ledger.refunds == 0
+    assert len(seen) == 1
+
+
+def test_full_path_through_the_real_reader_and_a_streamed_reply():
+    def answer(request):
+        body = json.loads(request.content)
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"},
+                               content=sse_body(message([{"type": "text", "text": json.dumps(echo_model()(body))}])))
+
+    reader, seen = mock_reader(answer)
+    reply = post(TEXT, make(reader))
+    a = reply.payload["analysis"]
+    assert a["source"] == "model" and a["verified"] == a["received"] == len(clauses(segment(NORM)))
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize("exc,notice,error", [
+    (ModelIncomplete("timeout"), "model_timeout", "timeout"),
+    (ModelIncomplete("interrupted"), "model_interrupted", "interrupted"),
+    (ModelUnavailable("config"), "model_error", "config"),
+    (ModelUnavailable("network"), "model_error", "network"),
+    (ModelUnavailable("busy"), "model_busy", "busy"),
+    (ModelRefused(), "refused", "rejected"),
+    (ModelOutputError("cut off"), "bad_output", "bad_output"),
+])
+def test_failures_log_their_kind_and_only_pre_generation_ones_refund(exc, notice, error):
+    ledger = LedgerBudget()
+    logs = []
+    reply = post(TEXT, make(ScriptedReader(lambda p: exc), ledger=ledger, logs=logs))
+    assert reply.payload["notice"]["kind"] == notice
+    assert json.loads(logs[-1])["error"] == error
+    assert ledger.refunds == (1 if isinstance(exc, ModelUnavailable) else 0)
+
+
 def test_rate_limited_model_is_reported_as_busy():
     reply = post(TEXT, make(ScriptedReader(lambda p: ModelUnavailable("busy"))))
     assert reply.payload["notice"]["kind"] == "model_busy"
@@ -185,11 +278,71 @@ def test_all_quotes_dropped_is_explained_and_not_cached():
 
 
 def test_long_part_is_not_sent_to_the_model():
+    assert MAX_AI_CHARS == 10_000  # the page's part size
     reader = ScriptedReader(echo_model())
+    ledger = LedgerBudget()
     long_text = ("You agree to these terms for the service. " * 500)[: MAX_AI_CHARS + 100]
-    reply = post(long_text, make(reader))
+    reply = post(long_text, make(reader, ledger=ledger))
     assert reply.payload["notice"]["kind"] == "too_long"
     assert reader.calls == []
+    assert ledger.ledger.status(DAY, 40)["used"] == 0
+
+
+def test_part_with_too_many_clauses_is_not_sent_to_the_model():
+    reader = ScriptedReader(echo_model())
+    ledger = LedgerBudget()
+    many = " ".join(f"Rule {i} applies here." for i in range(MAX_CLAUSES_PER_CALL + 5))
+    assert len(normalise(many)) <= MAX_AI_CHARS
+    reply = post(many, make(reader, ledger=ledger))
+    assert reply.payload["notice"]["kind"] == "too_many_clauses"
+    assert reader.calls == []
+    assert ledger.ledger.status(DAY, 40)["used"] == 0
+
+
+def test_weak_analyses_are_shown_but_not_cached():
+    """Under 80% of clauses verified: shown to this visitor, never cached."""
+    cache = MemoryCache()
+    n = len(clauses(segment(NORM)))
+    bad = n // 4 + 1  # just over a fifth dropped
+    reply = post(TEXT, make(ScriptedReader(echo_model(bad_quotes=bad)), cache=cache))
+    assert reply.payload["analysis"]["verified"] == n - bad
+    assert cache.puts == 0
+    post(TEXT, make(ScriptedReader(echo_model(bad_quotes=n // 5 - 1)), cache=cache))
+    assert cache.puts == 1  # most quotes verified: cached
+
+
+def test_headings_only_text_gets_a_normal_reply_with_a_notice():
+    reader = ScriptedReader(echo_model())
+    reply = post("TERMS OF SERVICE\n\n1. Definitions", make(reader))
+    assert reply.status == 200
+    p = reply.payload
+    assert p["notice"]["kind"] == "no_clauses" and p["analysis"] is None
+    assert [s["kind"] for s in p["segments"]] == ["heading", "heading"]
+    assert reader.calls == []
+
+
+def test_body_is_read_with_a_byte_cap():
+    def chunks(parts):
+        it = iter(parts)
+
+        async def read_chunk():
+            return next(it, None)
+
+        return read_chunk
+
+    assert run(collect_body(chunks([b"ab", b"cd"]), 4)) == b"abcd"
+    assert run(collect_body(chunks([]), 4)) == b""
+    pulled = []
+
+    def endless():
+        async def read_chunk():
+            pulled.append(1)
+            return b"x" * 1000
+
+        return read_chunk
+
+    assert run(collect_body(endless(), 5000)) is None
+    assert len(pulled) == 6  # stopped as soon as it passed the cap
 
 
 @pytest.mark.parametrize("body,ctype,status,code", [
@@ -198,7 +351,6 @@ def test_long_part_is_not_sent_to_the_model():
     (b'["text"]', "application/json", 400, "bad_request"),
     (b'{"text": "hi"}', "text/plain", 415, "unsupported_media_type"),
     (b'{"text": "   \\n  "}', "application/json", 422, "empty"),
-    (b'{"text": "TERMS OF SERVICE"}', "application/json", 422, "no_clauses"),
     (b"\xff\xfe", "application/json", 400, "bad_json"),
 ])
 def test_bad_input_gets_a_clear_error(body, ctype, status, code):
@@ -220,6 +372,11 @@ def test_status_endpoint_live_and_demo():
     assert live.status == 200
     assert live.payload["mode"] == "live" and live.payload["budget"]["limit"] == 40
     assert live.payload["model"] == "claude-opus-5-5" and live.payload["effort"] == "medium"
+    assert live.payload["fallbacks"] is True
+    limits = live.payload["limits"]
+    assert limits["max_ai_chars"] == MAX_AI_CHARS and limits["max_clauses"] == MAX_CLAUSES_PER_CALL
+    # The page's own timeout sits above the Worker's worst case for one call.
+    assert limits["timeout_s"] > worst_case_s(MAX_TOKENS)
     demo = run(handle(Request("GET", "/api/status"), make(has_key=False)))
     assert demo.payload["mode"] == "demo" and demo.payload["budget"] is None
 
@@ -257,7 +414,7 @@ def test_logs_hold_counts_only_never_text_or_key():
     for s in clauses(segment(NORM)):
         assert NORM[s.start : s.end][:30] not in joined
     for line in logs:
-        assert set(json.loads(line)) == {"event", "chars", "clauses", "source", "verified", "dropped", "notice"}
+        assert set(json.loads(line)) == {"event", "chars", "clauses", "source", "verified", "dropped", "notice", "error"}
 
 
 def test_responses_never_contain_the_key():

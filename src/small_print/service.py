@@ -6,25 +6,33 @@ Worker entry point adapts real bindings to these interfaces; the tests use
 in-memory fakes and a scripted model, so no test touches the network.
 
 Privacy: the document text and the API key never appear in logs. The only
-log line is a count summary per analysis.
+log line is a count summary per analysis, plus the kind of failure, if any.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Awaitable, Callable, Protocol
 
-from .model import ModelRefused, ModelUnavailable
+from .model import ModelIncomplete, ModelRefused, ModelUnavailable, worst_case_s
 from .normalise import normalise, text_sha256
-from .prompt import EFFORT, MODEL, pipeline_version, request_params
+from .prompt import EFFORT, MAX_TOKENS, MODEL, pipeline_version, request_params
 from .segment import Segment, clauses, segment
 from .verify import ModelOutputError, verify, with_quotes
 
 MAX_CHARS = 60_000  # hard cap on a request's text, after normalisation
-MAX_AI_CHARS = 16_000  # longest text sent to the model in one call
-MAX_BODY_BYTES = 512_000  # JSON body cap, checked before parsing
-MAX_CLAUSES_PER_CALL = 120
+MAX_AI_CHARS = 10_000  # longest text sent to the model in one call (the page's part size)
+MAX_BODY_BYTES = 512_000  # JSON body cap, enforced while reading the body
+MAX_CLAUSES_PER_CALL = 120  # most clauses sent to the model in one call
+# An analysis is cached only if at least this share of its clauses got a
+# verified reading: a weak reading is not frozen in for everyone.
+CACHE_MIN_VERIFIED = 0.8
+# How long the page should wait for one part before giving up: above the
+# Worker's own worst case for a model call, so the page never abandons a
+# call the Worker is still waiting on.
+CLIENT_TIMEOUT_S = math.ceil(worst_case_s(MAX_TOKENS)) + 30
 
 NOTICES = {
     "demo_mode": "AI reading is off on this server (no API key is set), so this is demo mode. "
@@ -34,10 +42,15 @@ NOTICES = {
     "visitor_limit": "You have used your AI readings for today. They reset at 00:00 UTC. "
     "Cached documents and the demo documents still work.",
     "too_long": "This part is too long for one reading. The page splits long documents into parts on its own; "
-    "send parts of at most 16,000 characters.",
-    "too_many_clauses": "This part has too many clauses for one reading. Send a smaller part.",
+    "send parts of at most 10,000 characters.",
+    "too_many_clauses": "This part has more than 120 clauses, too many for one reading. Send a smaller part.",
+    "no_clauses": "No clauses found: this text has headings only, so there is nothing to read.",
     "model_busy": "The model is busy right now. Nothing was taken from today's budget. Try again in a minute.",
     "model_error": "The model could not be reached. Nothing was taken from today's budget.",
+    "model_timeout": "The model took too long, so the reading was stopped. The model may already have "
+    "been working on it, and that can be billed, so it counted against today's budget.",
+    "model_interrupted": "The model's reply broke off before it finished. Part of a reply may already have "
+    "been billed, so it counted against today's budget.",
     "refused": "The model declined to read this text, so there are no readings for it.",
     "bad_output": "The model's reply could not be used (it was cut off or malformed). It still counted against today's budget.",
     "none_verified": "The model replied, but none of its quotes matched the text word for word, so every reading was dropped.",
@@ -57,6 +70,21 @@ class Budget(Protocol):
 
 class Reader(Protocol):
     async def read(self, params: dict) -> dict: ...
+
+
+async def collect_body(read_chunk: Callable[[], Awaitable[bytes | None]], cap: int) -> bytes | None:
+    """Read a request body chunk by chunk (``read_chunk`` returns None at the
+    end), stopping as soon as it passes ``cap`` bytes. A chunked upload has
+    no Content-Length to check up front, so the cap is enforced here, before
+    the whole body is in memory. Returns None when the body is too large."""
+    out = bytearray()
+    while True:
+        chunk = await read_chunk()
+        if chunk is None:
+            return bytes(out)
+        out += chunk
+        if len(out) > cap:
+            return None
 
 
 @dataclass
@@ -157,8 +185,14 @@ async def _status(deps: Deps) -> Reply:
             "mode": "live" if deps.config.has_key else "demo",
             "model": MODEL,
             "effort": EFFORT,
+            "fallbacks": deps.config.fallbacks,
             "budget": await _budget_status(deps),
-            "limits": {"max_chars": MAX_CHARS, "max_ai_chars": MAX_AI_CHARS},
+            "limits": {
+                "max_chars": MAX_CHARS,
+                "max_ai_chars": MAX_AI_CHARS,
+                "max_clauses": MAX_CLAUSES_PER_CALL,
+                "timeout_s": CLIENT_TIMEOUT_S,
+            },
         },
     )
 
@@ -218,21 +252,27 @@ async def _analyze(req: Request, deps: Deps) -> Reply:
         return _error(413, "too_large", f"The text is longer than {MAX_CHARS:,} characters.")
     segs = segment(text)
     clause_segs = clauses(segs)
-    if not clause_segs:
-        return _error(422, "no_clauses", "No clauses found: the text has headings only.")
 
     c = deps.config
     mode = "live" if c.has_key else "demo"
     sha = text_sha256(text)
     pipeline = pipeline_version()
 
-    def done(analysis, source, notice, budget, status=200):
+    def done(analysis, source, notice, budget, error=None):
+        # error: why the model gave no usable reading, if it did not.
+        # Refunded: "config" | "network" | "busy" | "upstream".
+        # Counted: "timeout" | "interrupted" | "rejected" (declined) | "bad_output".
         deps.log(json.dumps({
             "event": "analyze", "chars": len(text), "clauses": len(clause_segs), "source": source or "none",
             "verified": analysis["verified"] if analysis else 0, "dropped": analysis["dropped"] if analysis else 0,
-            "notice": notice,
+            "notice": notice, "error": error,
         }))
-        return Reply(status, response_payload(text, sha, segs, analysis, source, notice, budget, mode))
+        return Reply(200, response_payload(text, sha, segs, analysis, source, notice, budget, mode))
+
+    if not clause_segs:
+        # Not an error status: a long document split into parts can have a
+        # part that is all headings, and the page still shows its headings.
+        return done(None, None, "no_clauses", None)
 
     cached = await deps.cache.get(sha, pipeline)
     if cached is not None:
@@ -257,18 +297,24 @@ async def _analyze(req: Request, deps: Deps) -> Reply:
         result = await deps.reader.read(params)
         analysis = verify(text, segs, result["data"])
     except ModelUnavailable as exc:
+        # Failed before generation started: nothing was billed.
         await deps.budget.refund(deps.today, deps.client)
         budget["used"] = max(0, budget["used"] - 1)
         budget["remaining"] = min(budget["limit"], budget["remaining"] + 1)
         budget["visitor_remaining"] = budget["visitor_remaining"] + 1
-        return done(None, None, "model_busy" if exc.kind == "busy" else "model_error", budget)
+        return done(None, None, "model_busy" if exc.kind == "busy" else "model_error", budget, exc.kind)
+    except ModelIncomplete as exc:
+        # Timed out or broke off after the request went out: it may have been
+        # billed, so the unit stays spent (and the notice says so).
+        return done(None, None, f"model_{exc.kind}", budget, exc.kind)
     except ModelRefused:
-        return done(None, None, "refused", budget)
+        return done(None, None, "refused", budget, "rejected")
     except ModelOutputError:
-        return done(None, None, "bad_output", budget)
+        return done(None, None, "bad_output", budget, "bad_output")
 
     analysis["model"] = result.get("model") or MODEL
     if analysis["verified"] == 0:
         return done(analysis, "model", "none_verified", budget)
-    await deps.cache.put(sha, pipeline, analysis)
+    if analysis["verified"] >= CACHE_MIN_VERIFIED * max(analysis["received"], len(clause_segs)):
+        await deps.cache.put(sha, pipeline, analysis)
     return done(analysis, "model", None, budget)

@@ -31,6 +31,7 @@ from small_print.service import (  # noqa: E402
     Deps,
     Reply,
     Request,
+    collect_body,
     handle,
 )
 
@@ -125,6 +126,28 @@ def _log(line):
     print(line)
 
 
+async def _read_body(request):
+    """The request body, read chunk by chunk up to MAX_BODY_BYTES. Returns
+    None when it is larger (a chunked upload has no Content-Length, so the
+    cap cannot be checked up front)."""
+    stream = request.js_object.body
+    if stream is None or not hasattr(stream, "getReader"):
+        return b""
+    reader = stream.getReader()
+
+    async def read_chunk():
+        result = await reader.read()
+        return None if result.done else result.value.to_bytes()
+
+    try:
+        return await collect_body(read_chunk, MAX_BODY_BYTES)
+    finally:
+        try:
+            await reader.cancel()  # stops an oversized upload; a no-op once fully read
+        except Exception:  # noqa: BLE001 - the stream may already be closed
+            pass
+
+
 class Default(WorkerEntrypoint):
     def _config(self):
         env = self.env
@@ -149,11 +172,13 @@ class Default(WorkerEntrypoint):
     async def _fetch(self, request):
         headers = {k.lower(): v for k, v in request.headers.items()}
         length = headers.get("content-length", "")
+        too_large = Reply(413, {"error": "too_large", "message": "The request body is too large."})
         if length.isdigit() and int(length) > MAX_BODY_BYTES:
-            # Refuse before reading the body into memory.
-            reply = Reply(413, {"error": "too_large", "message": "The request body is too large."})
-            return Response(reply.body(), status=413, headers=dict(BASE_HEADERS))
-        body = (await request.text()).encode("utf-8") if request.method == "POST" else b""
+            # Refuse before reading the body at all.
+            return Response(too_large.body(), status=413, headers=dict(BASE_HEADERS))
+        body = await _read_body(request) if request.method == "POST" else b""
+        if body is None:
+            return Response(too_large.body(), status=413, headers=dict(BASE_HEADERS))
 
         key, config = self._config()
         reader = None
