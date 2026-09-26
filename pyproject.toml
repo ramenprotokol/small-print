@@ -1,0 +1,25 @@
+[project]
+name = "small-print"
+version = "0.1.0"
+description = "Paste a Terms of Service; get a clause-by-clause map of who each clause favours, with the exact quote."
+requires-python = ">=3.12"
+license = "MIT"
+# The only runtime dependency. pywrangler vendors it (for Pyodide) into
+# python_modules/, pinned by pylock.toml; uv.lock pins the CPython copy the
+# tests use.
+dependencies = ["anthropic>=1.8,<2"]
+
+[dependency-groups]
+dev = [
+    "workers-py>=1.17",
+    "workers-runtime-sdk>=1.9",
+    # pywrangler 1.17 needs uv >= 0.12.3; pinning it here keeps the toolchain
+    # inside the project instead of upgrading a global uv.
+    "uv>=0.12.3",
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/py"]
+pythonpath = ["src"]
+addopts = "-q"

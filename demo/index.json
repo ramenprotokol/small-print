@@ -1,0 +1,5 @@
+[
+  {"slug": "nimbus-locker", "exhibit": "A", "name": "Nimbus Locker", "kind": "Cloud storage app"},
+  {"slug": "pacewren", "exhibit": "B", "name": "Pacewren", "kind": "Fitness tracker and app"},
+  {"slug": "brothbike", "exhibit": "C", "name": "Brothbike", "kind": "Food delivery app"}
+]

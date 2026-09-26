@@ -1,0 +1,66 @@
+NIMBUS LOCKER TERMS OF SERVICE
+Last updated: 3 February 2026. This is a fictional document written for the small-print demo; Nimbus Locker is not a real company or product.
+
+1. Who We Are
+Nimbus Locker Ltd. ("Nimbus", "we", "us") runs the Nimbus Locker cloud storage app and website at nimbuslocker.example (together, the "Service"). "You" means the person who creates an account.
+
+2. Accepting These Terms
+By creating an account or uploading a file, you agree to these Terms. If you do not agree, do not use the Service.
+You must be at least 16 years old to create an account.
+
+3. Your Files
+You keep ownership of everything you upload. We do not claim any ownership rights in your files.
+You grant Nimbus a worldwide, royalty-free, sublicensable licence to host, copy, transmit, scan, modify and display your files for the purpose of operating, improving and promoting the Service.
+This licence continues for a commercially reasonable time after you delete a file or close your account.
+We may scan files automatically to detect malware and content that breaks these Terms.
+You can download a complete copy of your files at any time, in their original format, from Settings > Export.
+
+4. Plans, Billing and Renewal
+Paid plans are billed in advance, monthly or yearly.
+Your plan renews automatically at the end of each billing period at the then-current price unless you cancel at least 24 hours before the renewal date.
+We may change plan prices at any time; for existing subscribers, a price change takes effect at your next renewal after we give you at least 30 days' notice by email.
+If you cancel within 14 days of your first paid charge, we will refund that charge in full.
+Apart from that, payments are non-refundable, including for partial billing periods.
+If a payment fails, we may suspend uploads until the balance is paid.
+
+5. Storage Limits and Free Accounts
+Each plan has a storage limit shown on the pricing page.
+Free accounts that have not been signed into for 12 months may be deleted, together with their files, after we send two email warnings at least 30 days apart.
+We may reduce the storage included in free accounts at any time.
+
+6. Acceptable Use
+You agree not to: (a) upload anything you do not have the right to share; (b) use the Service to distribute malware; (c) resell or sublet storage; or (d) try to access other users' files.
+We may remove any file that we believe, in our sole discretion, breaks this section, without notice.
+
+7. Privacy
+Our Privacy Notice explains what personal data we collect and why.
+We do not sell your personal data.
+We may share aggregated or de-identified information about how the Service is used with partners and advertisers.
+We may use the contents of your files, in de-identified form, to train and improve our automated features, including machine-learning models.
+
+8. Suspension and Termination
+You can close your account at any time from Settings.
+We may suspend or terminate your account at any time, for any reason or no reason, with or without notice.
+If we terminate your account for reasons other than a breach of these Terms, we will give you at least 30 days to download your files and refund any prepaid fees for the unused period.
+After your account closes, we may delete your files permanently after 30 days.
+
+9. Changes to These Terms
+We may modify these Terms at any time by posting the revised version on the website.
+Your continued use of the Service after a change is posted means you accept the revised Terms.
+
+10. Disclaimers
+THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+We do not guarantee that the Service will be uninterrupted or that files will never be lost; you are responsible for keeping your own backups.
+
+11. Limitation of Liability
+TO THE FULLEST EXTENT PERMITTED BY LAW, NIMBUS WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF DATA, PROFITS OR GOODWILL.
+Our total liability for any claim relating to the Service is limited to the amount you paid us in the 12 months before the claim, or 20 euros if you have not paid us anything.
+Nothing in these Terms limits liability that cannot be limited by law, such as liability for death or personal injury caused by negligence.
+
+12. Disputes
+Any dispute arising from these Terms will be resolved by binding individual arbitration, and you waive any right to a jury trial or to take part in a class action.
+You may opt out of arbitration by emailing optout@nimbuslocker.example within 30 days of creating your account.
+These Terms are governed by the laws of the Republic of Examplia.
+
+13. Contact
+Questions about these Terms can be sent to legal@nimbuslocker.example.

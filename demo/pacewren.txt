@@ -1,0 +1,68 @@
+PACEWREN BAND AND APP: TERMS OF USE
+Effective 1 July 2026. This is a fictional document written for the small-print demo; Pacewren is not a real company or product.
+
+1. About These Terms
+These Terms apply to the Pacewren wrist band, the Pacewren app and the Pacewren Plus subscription (together, the "Services"), provided by Pacewren Health Inc. ("Pacewren").
+By pairing a band or signing in to the app, you agree to these Terms and to our Privacy Notice.
+
+2. Not Medical Advice
+The Services are for general fitness and wellness only.
+They are not a medical device and do not diagnose, treat or prevent any disease.
+Heart rate, sleep and calorie figures are estimates and may be inaccurate.
+Talk to a qualified health professional before starting a new exercise programme, and do not rely on the Services in an emergency.
+
+3. Your Account
+You are responsible for keeping your password secure and for all activity under your account.
+Tell us promptly at security@pacewren.example if you think someone else has used your account.
+
+4. Health Data
+The band collects heart rate, movement, sleep and location data ("Health Data").
+We use Health Data to provide the Services and to personalise your insights.
+We will not sell your Health Data or share it with insurers or employers without your explicit consent.
+We may share Health Data with service providers who process it on our behalf under confidentiality obligations.
+We may use de-identified Health Data for research and product development, and we may publish or share the results.
+You can switch off location tracking at any time in the app, although some features, such as route maps, will stop working.
+You can ask us to delete your Health Data at any time; we will do so within 30 days, except where we must keep it by law.
+
+5. Pacewren Plus
+Pacewren Plus is a paid subscription that renews automatically each month until you cancel.
+You can cancel at any time in the app, and your subscription will continue until the end of the current billing month.
+Free trials convert into a paid subscription automatically unless you cancel before the trial ends.
+We will remind you by email at least 3 days before a free trial converts.
+We may add, change or remove Plus features from time to time.
+
+6. The Band
+The band comes with a limited warranty against defects in materials and workmanship for 12 months from purchase.
+The warranty does not cover damage from accidents, water beyond the stated rating, or unauthorised repairs.
+Under the warranty, we will repair or replace a defective band, or refund the purchase price, at our option.
+This warranty is in addition to any rights you have under consumer law, which it does not affect.
+
+7. Community Features
+If you join a challenge or leaderboard, your display name, profile photo and activity totals will be visible to other participants.
+You grant Pacewren a non-exclusive licence to display the content you post in community features.
+We may remove posts or suspend community access if you harass others or post unlawful content.
+
+8. Software Updates
+The band and app may update automatically.
+Some updates may change or remove features, and we are not obliged to keep supporting older bands.
+We will provide security updates for each band model for at least 3 years after we stop selling it.
+
+9. Ending the Services
+You can stop using the Services and delete your account at any time.
+We may suspend or end your access if you seriously or repeatedly breach these Terms.
+If we discontinue the Services entirely, we will give you at least 90 days' notice and a way to export your data.
+
+10. Liability
+To the extent permitted by law, Pacewren is not responsible for any injury, illness or loss that results from your exercise or from relying on data from the Services.
+Our total liability to you is limited to the greater of the amount you paid us in the last 12 months or 50 euros.
+
+11. Changes
+We may update these Terms from time to time.
+If a change materially reduces your rights, we will tell you in the app at least 30 days before it takes effect, and you may cancel Plus before then for a pro-rata refund.
+
+12. Law and Disputes
+These Terms are governed by the laws of the Republic of Examplia, and the courts of Examplia will have jurisdiction.
+If you live elsewhere, you may also bring a claim in the courts where you live.
+
+13. Contact
+You can reach us at help@pacewren.example.

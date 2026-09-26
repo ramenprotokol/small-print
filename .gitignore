@@ -1,0 +1,32 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.local
+ramen-identity.env
+
+# Cloudflare / wrangler
+.wrangler/
+.mf/
+
+# Node / Python / build
+node_modules/
+dist/
+build/
+__pycache__/
+.venv/
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# Python Workers (pywrangler)
+python_modules/
+.venv-workers/
+*.egg-info/
+
+# Local test output
+.e2e/

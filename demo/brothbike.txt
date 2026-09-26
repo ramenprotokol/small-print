@@ -1,0 +1,70 @@
+BROTHBIKE DELIVERY: CUSTOMER TERMS
+Version 4.2, last changed 12 August 2026. This is a fictional document written for the small-print demo; Brothbike is not a real company or service.
+
+1. What Brothbike Does
+Brothbike Networks Ltd. ("Brothbike") runs an app that lets you order food from independent restaurants and have it delivered by independent couriers.
+Brothbike is not a restaurant and does not prepare food; each restaurant is responsible for its own food, including allergen information.
+Couriers are independent contractors, not Brothbike employees.
+
+2. Orders and Prices
+When you place an order, you make an offer to buy from the restaurant, which it may accept or reject.
+Menu prices are set by restaurants and may differ from prices charged in the restaurant itself.
+Delivery fees, a service fee and, at busy times, a demand fee are added at checkout and shown before you pay.
+We may change fees at any time without notice, but the total shown at checkout is the total you pay for that order.
+
+3. Payment
+We charge your payment method when the restaurant accepts your order.
+We may place a temporary authorisation hold of up to 20 percent above the order total to cover changes, such as substitutions or added tips.
+
+4. Delivery Times
+Delivery times shown in the app are estimates only.
+We are not liable for late deliveries caused by traffic, weather, restaurant delays or events beyond our reasonable control.
+
+5. Cancellations and Refunds
+You can cancel an order free of charge until the restaurant accepts it.
+After the restaurant accepts your order, cancellations may be charged in full.
+If items are missing or incorrect, report it in the app within 48 hours and we will refund the affected items.
+Refunds for other problems are at our discretion and may be given as Brothbike credit rather than money.
+Brothbike credit expires 6 months after it is issued and cannot be exchanged for cash.
+
+6. Tips
+You may add a tip for your courier before or after delivery.
+Couriers receive 100 percent of tips.
+
+7. Allergies
+If you have a food allergy, contact the restaurant directly before ordering.
+We cannot guarantee that any food is free from allergens.
+
+8. Ratings and Reviews
+You can rate restaurants and couriers.
+By posting a review, you grant Brothbike a perpetual, irrevocable, worldwide licence to use, edit and publish it, including in advertising, with your first name.
+We may remove reviews that are abusive, false or unrelated to the order.
+
+9. Your Account
+We may suspend your account if we suspect fraud, abuse of refunds or promotions, or abusive behaviour towards couriers or restaurant staff.
+We may also close accounts that have not been used for 24 months.
+
+10. Location and Personal Data
+We collect your delivery address and, while an order is active, your device location, to make deliveries.
+We share your name, address and phone number with the restaurant and the courier for your order.
+We use your order history to show you recommendations and marketing, and you can opt out of marketing messages at any time in Settings.
+We may share your personal data with advertising partners to measure the performance of our adverts.
+
+11. Promotions
+Promo codes are one per customer, cannot be combined unless stated, and may be withdrawn at any time.
+
+12. Our Liability
+Nothing in these Terms affects your statutory rights as a consumer.
+Subject to that, our total liability for any order is limited to the amount you paid for that order.
+We are not liable for any loss that was not reasonably foreseeable when you placed the order.
+
+13. Changes to These Terms
+We may change these Terms at any time.
+The version in force when you place an order applies to that order.
+
+14. Disputes
+Before starting any legal claim, you agree to contact our support team and give us 30 days to try to resolve it.
+These Terms are governed by the laws of the Republic of Examplia.
+
+15. Contact
+Support is available in the app or at care@brothbike.example.
