@@ -340,8 +340,12 @@ async function onSubmit(event) {
       return;
     }
     syncBudget(doc);
-    show(doc);
+    // Settle the form above first (the progress box, the history list):
+    // show() scrolls to the result, and a smooth scroll does not follow
+    // content that moves while it runs.
+    progress.done();
     remember(doc);
+    show(doc);
   } finally {
     progress.done();
     button.disabled = false;
@@ -427,15 +431,14 @@ async function readLocally(text, converted) {
   const button = $('#read');
   button.disabled = true;
   const progress = localProgressUI();
+  let doc = null;
   try {
     const { payload, runtime } = await localReader.read(text, progress.update);
     if (!payload.segments.some((s) => s.kind === 'clause')) {
       formError(payload.notice?.message || 'No clauses found in that text.');
       return;
     }
-    const doc = buildDoc([payload], { kind: 'rules', converted, runtime });
-    show(doc);
-    remember(doc);
+    doc = buildDoc([payload], { kind: 'rules', converted, runtime });
   } catch (err) {
     formError(err.message);
   } finally {
@@ -443,6 +446,13 @@ async function readLocally(text, converted) {
     button.disabled = false;
     renderServiceStatus();
     updatePlan();
+  }
+  // Only once the form above has settled (the progress box gone, the status
+  // line shorter, the history list grown): show() scrolls to the result, and
+  // a smooth scroll does not follow content that moves while it runs.
+  if (doc) {
+    remember(doc);
+    show(doc);
   }
 }
 

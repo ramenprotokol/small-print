@@ -83,6 +83,11 @@ test('pasted terms are read on this device by Python, with verified quotes', { s
     assert.match(r.checklist, /Looked for, not found:/);
     assert.match(r.tally, /No rule matched/);
     assert.match(r.history, /QUILLFEATHER NOTES/);
+    // The reading lands on the start of the result, "Not legal advice" first:
+    // the progress box above it must be gone before the page scrolls there.
+    await page.waitFor(`new Promise((done) => { const y = scrollY; setTimeout(() => done(scrollY === y && y > 0), 400); })`);
+    const top = await page.evaluate(`Math.round(document.querySelector('#result').getBoundingClientRect().top)`);
+    assert.ok(Math.abs(top) <= 2, `the result starts at the top of the screen (${top} px)`);
 
     // Specific clauses: the label, the note's topic, and a second finding.
     const clause = (needle) => page.evaluate(`(() => {
