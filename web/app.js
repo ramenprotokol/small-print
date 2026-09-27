@@ -360,7 +360,11 @@ function localProgressUI() {
     const li = el('li');
     li.dataset.state = state;
     const detail = el('span', 'pp-state', state === 'done' ? 'loaded' : 'waiting');
-    li.append(el('span', 'pp-name', name), el('span', 'pp-size'), detail);
+    // The byte count changes many times a second; screen readers get it from
+    // the progress bar instead of hearing every update in this live region.
+    const size = el('span', 'pp-size');
+    size.setAttribute('aria-hidden', 'true');
+    li.append(el('span', 'pp-name', name), size, detail);
     list.append(li);
     return li;
   };
@@ -380,6 +384,7 @@ function localProgressUI() {
   meter.append(fill);
   meter.hidden = warm;
   const clock = el('p', 'progress-clock');
+  clock.setAttribute('aria-hidden', 'true');
   const lead = warm ? 'Reading on this device.' : `Reading on this device. First, the Python runtime (${formatBytes(total)}); later readings reuse it.`;
   box.replaceChildren(el('p', 'progress-lead', lead), list, meter, clock);
   box.hidden = false;
