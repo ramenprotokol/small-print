@@ -9,6 +9,7 @@ import {
   formatBytes,
   guessTitle,
   hasReadableText,
+  htmlToText,
   looksLikeHtml,
   makeIndexer,
   markRuns,
@@ -85,6 +86,26 @@ test('looksLikeHtml needs real tags', () => {
   assert.ok(looksLikeHtml('<p>Terms</p><p>More</p>'));
   assert.ok(!looksLikeHtml('Use of the "Service" <is> governed by 1 < 2 > 0'));
   assert.ok(!looksLikeHtml('A single <b>bold'));
+  assert.ok(looksLikeHtml('<p>Terms</p> and an unclosed <p'));
+});
+
+// Both run on the page's main thread on every paste, before the length
+// check, so a crafted paste must not make them quadratic.
+test('looksLikeHtml stays fast on tag starts that never close', () => {
+  const t0 = performance.now();
+  assert.ok(!looksLikeHtml('<p '.repeat(100000)));
+  assert.ok(performance.now() - t0 < 1000, `${Math.round(performance.now() - t0)} ms`);
+});
+
+test('htmlToText stays fast on a long run of spaces from many inline elements', () => {
+  // A stand-in for DOMParser: ' <b></b>' repeated gives one text node per space.
+  const childNodes = [];
+  for (let i = 0; i < 100000; i += 1) childNodes.push({ nodeType: 3, nodeValue: ' ' }, { nodeType: 1, tagName: 'B', childNodes: [] });
+  childNodes.push({ nodeType: 3, nodeValue: 'Terms.' });
+  const Parser = class { parseFromString() { return { querySelectorAll: () => [], body: { childNodes } }; } };
+  const t0 = performance.now();
+  assert.equal(htmlToText('ignored', Parser), 'Terms.');
+  assert.ok(performance.now() - t0 < 1000, `${Math.round(performance.now() - t0)} ms`);
 });
 
 function part(text, segments, readings, extra = {}, model = 'claude-opus-5-5') {

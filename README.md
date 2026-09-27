@@ -123,7 +123,7 @@ Toolchain: Node 20+ (for wrangler, Pyodide and the page tests) and [uv](https://
 ```sh
 npm install           # wrangler and pyodide, both pinned
 npm run build         # -> dist/ (static UI, Pyodide runtime, Python bundle, exhibits, notices), via scripts/build.py
-npm test              # pytest (297 tests) + build + node --test (31 tests, incl. headless Chrome and Pyodide)
+npm test              # pytest (297 tests) + build + node --test (33 tests, incl. headless Chrome and Pyodide)
 npm run test:e2e      # the real Worker in local workerd, demo mode and a mocked model
 npm run dev           # build, apply D1 migrations locally, pywrangler dev on :8787 (demo mode)
 uv run python scripts/compare_rules.py   # rule labels vs the exhibit readings and a spot check

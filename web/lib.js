@@ -58,8 +58,11 @@ export function modelName(id) {
 
 const HTML_TAG = /<\/?(?:p|div|li|ul|ol|h[1-6]|br|section|article|span|a|strong|em|b|i|table|tr|td|body|html|head|main)\b[^>]*>/gi;
 
+// A tag must close with a '>'. Tag starts after the last '>' can never match,
+// and each would make [^>]* scan to the end of the text (quadratic on a paste
+// of unclosed "<p"), so only the text up to the last '>' is searched.
 export function looksLikeHtml(s) {
-  const m = s.match(HTML_TAG);
+  const m = s.slice(0, s.lastIndexOf('>') + 1).match(HTML_TAG);
   return !!m && m.length >= 2;
 }
 
@@ -93,7 +96,9 @@ export function htmlToText(html, Parser = globalThis.DOMParser) {
     }
   };
   walk(doc.body || doc.documentElement);
-  return prepText(out.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n'));
+  // (?<![ \t]) tries a run of spaces only from its first space, so a long run
+  // costs its length once, not its length squared.
+  return prepText(out.replace(/(?<![ \t])[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n'));
 }
 
 function pack(pieces, joiner, max) {
