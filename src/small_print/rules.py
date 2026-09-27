@@ -449,7 +449,7 @@ RULES: tuple[Rule, ...] = (
             r"\bnot (?:be )?(?:liable|responsible) for (?:any )?(?:indirect|incidental|special|consequential|punitive|exemplary|lost|loss)\w*" + TAIL,
             r"\b(?:disclaim|exclude)s?\b" + G(30) + r"\b(?:all |any )?liability\b",
         ),
-        strong=r"\bindirect\b|\bconsequential\b|\bincidental\b|\bpunitive\b|\bany (?:loss|damage|injury)\b",
+        strong=r"\bindirect\b|\bconsequential\b|\bincidental\b|\bpunitive\b|\bany (?:loss|damage|injury)\b|\blost profits\b|\bloss of (?:data|profits?|revenue)\b",
         negatable=False,
         not_you=True,
         weight=65,
@@ -625,7 +625,8 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "deidentified", "Data they say is anonymous", "unclear",
         "They use or share data they say cannot identify you; how well that holds depends on the method.",
-        (r"\b(?:aggregated|de-?identified|anonymi[sz]ed|pseudonymi[sz]ed)\b" + G(40) + r"\b(?:data|information|form|results)\b" + TAIL,),
+        (r"\b(?:aggregated|de-?identified|anonymi[sz]ed|pseudonymi[sz]ed)\b" + G(40)
+         + r"\b(?:data|information|form|results|statistics|insights|reports)\b" + TAIL,),
         weight=35,
     ),
     Rule(

@@ -106,12 +106,31 @@ POSITIVES = [
     ("We never sell your personal information.", "no_data_sale"),
     ("We will indemnify you against claims that the App infringes a copyright.", "they_indemnify"),
     ("Nothing in these terms prevents you from joining a class action.", "class_action_kept"),
+    ("Either of us may still bring an individual claim in a small claims court.", "small_claims"),
+    ("Before filing any claim, you agree to contact us and try to resolve the dispute informally.", "informal_first"),
+    ("We may suspend or discontinue any feature of the App at any time.", "service_changes"),
+    ("We may delete any content you post at any time, without notice.", "remove_content"),
+    ("Quillfeather may assign this Agreement to any buyer of its business.", "assignment"),
+    ("Either party may terminate this Agreement with thirty days' notice.", "mutual_termination"),
+    ("Reward points expire twelve months after they are earned.", "expiring_credit"),
+    ("The pen comes with a warranty against defects for two years.", "warranty"),
+    ("We are responsible for losses caused by our negligence.", "accepts_liability"),
+    ("You are responsible for all activity under your account.", "account_risk"),
+    ("This licence survives after you delete your notes.", "licence_survives"),
+    ("We grant you a personal, non-transferable licence to use the App.", "app_licence"),
+    ("We share your email address with service providers who send our emails.", "data_processors"),
+    ("We may publish aggregated statistics about how notes are used.", "deidentified"),
+    ("You agree to receive promotional emails from Quillfeather.", "marketing_consent"),
 ]
 
 
 @pytest.mark.parametrize(("sentence", "rule"), POSITIVES)
 def test_rule_fires_on_its_own_kind_of_clause(sentence, rule):
     assert rule in fired(sentence)
+
+
+def test_every_rule_has_a_true_positive():
+    assert {r.id for r in RULES} == {rule for _, rule in POSITIVES}
 
 
 # Near misses: the words a rule looks for are there, but the clause says
