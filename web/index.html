@@ -7,6 +7,7 @@
   <meta name="description" content="Paste a Terms of Service; get a clause-by-clause map of who each clause favours, with the exact quote.">
   <meta name="color-scheme" content="light dark">
   <meta name="sp-api" content="">
+  <meta name="sp-runtime" content="">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -61,7 +62,7 @@
     <section id="result" class="result" aria-labelledby="doc-title" hidden>
       <div class="not-advice" role="note">
         <p class="not-advice-label">Not legal advice</p>
-        <p>small print is a reading aid. Labels and one-line readings are automated (or, for the exhibits, hand-written) and can be wrong or miss context. The highlighted words are the evidence: read them yourself, and ask a qualified lawyer before a decision that matters.</p>
+        <p>small print is a reading aid. Labels and one-line readings come from a fixed set of hand-written rules (or, on a server with an AI key, a model; for the exhibits, a person) and can be wrong or miss context. The highlighted words are the evidence: read them yourself, and ask a qualified lawyer before a decision that matters.</p>
       </div>
 
       <header class="result-head">
@@ -70,6 +71,7 @@
         <p id="verification" class="verification"></p>
         <div id="notices" class="notices" hidden></div>
         <div id="tally" class="tally" aria-label="Clauses by who they favour"></div>
+        <div id="checklist" class="checklist" hidden></div>
         <div class="keys-row">
           <p class="keys"><kbd>j</kbd> / <kbd>k</kbd> next and previous clause &#183; <kbd>Esc</kbd> clear &#183; click a clause to select it</p>
           <button id="offsets" class="offsets" type="button" aria-pressed="false" aria-controls="doc">Show quote offsets</button>
@@ -96,16 +98,29 @@
     <div class="colophon-inner">
       <section>
         <h2 class="side-h">How it reads</h2>
-        <p>Your text is split into clauses by a small Python program running in a Cloudflare Worker. The clauses go to Claude Opus 5.5, which returns, for each one, who it favours, a one-line reading, a confidence and a quote. The Worker then checks every quote against your text, character for character, and drops any reading whose quote is not inside its own clause. The page tells you how many were dropped.</p>
-        <p>If Opus 5.5 declines, another Claude model may answer; each part shows which model read it.</p>
+        <div class="mode-copy" data-mode="rules">
+          <p>Pasted text is read in your browser, by Python. Pyodide (CPython compiled to WebAssembly) runs this project&#8217;s Python in a background worker: it splits the text into clauses, then tries a fixed library of hand-written rules on each one, for forced arbitration, class-action and jury waivers, changes to the terms, auto-renewal, account closure, liability caps, indemnity, selling and sharing data, tracking, licences over your content, law and courts, refunds and fees, age limits, and the clauses that protect you. Each rule says who its kind of clause favours.</p>
+          <p>The words a rule matched become the quote, and every quote is checked against your text, character for character, inside its own clause, by the same verifier a model&#8217;s quotes go through. A rule&#8217;s &#8220;match&#8221; says how specific the wording was, not how sure anyone is about the law. No AI reads your text here.</p>
+        </div>
+        <div class="mode-copy" data-mode="live" hidden>
+          <p>Your text is split into clauses by a small Python program running in a Cloudflare Worker. The clauses go to Claude Opus 5.5, which returns, for each one, who it favours, a one-line reading, a confidence and a quote. The Worker then checks every quote against your text, character for character, and drops any reading whose quote is not inside its own clause. The page tells you how many were dropped.</p>
+          <p>If Opus 5.5 declines, another Claude model may answer; each part shows which model read it.</p>
+        </div>
       </section>
       <section>
         <h2 class="side-h">What is kept</h2>
-        <p>The Worker caches each analysis in which at least 80% of the clauses got a checked reading, under a SHA-256 fingerprint of the text, so the same document is not paid for twice. The cache holds offsets, labels and readings, not your text, and can only be looked up by someone who already has the exact text. Nothing you paste is logged.</p>
+        <div class="mode-copy" data-mode="rules">
+          <p>Nothing leaves your device: the text is read in this browser tab, and the Python runtime comes from this site, not a third party. Your last five documents are kept in this browser&#8217;s storage only.</p>
+          <p>The same page can also send text to a Python Worker that asks Claude, when its owner deploys one with an API key. This site has no key, so it does not.</p>
+        </div>
+        <div class="mode-copy" data-mode="live" hidden>
+          <p>The Worker caches each analysis in which at least 80% of the clauses got a checked reading, under a SHA-256 fingerprint of the text, so the same document is not paid for twice. The cache holds offsets, labels and readings, not your text, and can only be looked up by someone who already has the exact text. Nothing you paste is logged.</p>
+        </div>
       </section>
       <section>
         <h2 class="side-h">Made by</h2>
         <p>Ramen Protocol (ramenprotokol), built with AI assistance from Claude. The exhibits are fictional; no real company&#8217;s terms are quoted here. Not legal advice.</p>
+        <p>Runs on <a href="https://pyodide.org/">Pyodide</a> (MPL 2.0) and CPython (PSF License), served from this site. <a href="THIRD-PARTY-NOTICES.txt">Third-party notices</a>.</p>
       </section>
     </div>
   </footer>

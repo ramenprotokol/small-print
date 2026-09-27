@@ -1,13 +1,14 @@
-// Smoke test of the built dist/: files, references, headers, demo data, and
-// the page itself in headless Chrome, served as plain static files (as on
-// Pages with no API reachable). Run `npm run build` first (npm test does).
+// Smoke test of the built dist/: files, references, headers, the Python
+// runtime and its licence notices, demo data, and the page itself in
+// headless Chrome, served as plain static files with dist/_headers applied
+// (as on Pages with no API reachable). Run `npm run build` first (npm test does).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { extname, join, dirname, normalize } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findChrome, launchChrome } from './cdp.mjs';
+import { serveDist } from './serve.mjs';
 
 const DIST = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist');
 const read = (p) => readFileSync(join(DIST, p), 'utf8');
@@ -29,14 +30,77 @@ test('dist/ exists with hashed assets that index.html references', () => {
 
 test('_headers: strict CSP, long cache only for hashed assets', () => {
   const h = read('_headers');
-  assert.match(h, /script-src 'self';/);
-  assert.doesNotMatch(h, /unsafe-inline|unsafe-eval/);
+  // WebAssembly may be compiled (the Python runtime); JavaScript eval may not.
+  assert.match(h, /script-src 'self' 'wasm-unsafe-eval';/);
+  assert.match(h, /worker-src 'self';/);
+  assert.doesNotMatch(h, /unsafe-inline|'unsafe-eval'/);
   assert.match(h, /connect-src 'self'/);
   assert.match(h, /frame-ancestors 'none'/);
   const blocks = h.split(/\n(?=\S)/);
   const cached = blocks.filter((b) => /max-age=31536000/.test(b));
   assert.equal(cached.length, 1);
   assert.match(cached[0], /^\/assets\/\*/);
+});
+
+function runtime() {
+  const html = read('index.html');
+  const meta = /<meta name="sp-runtime" content="([^"]+)">/.exec(html);
+  assert.ok(meta, 'the page names its runtime');
+  const facts = Object.fromEntries(meta[1].split(' ').map((kv) => kv.split('=')));
+  const worker = readdirSync(join(DIST, 'assets')).find((f) => /^rules-worker\.[0-9a-f]{10}\.js$/.test(f));
+  const src = read(`assets/${worker}`);
+  const folder = /const RUNTIME = "\.\/(pyodide-[0-9a-f]{10})\/";/.exec(src)?.[1];
+  const bundle = /const BUNDLE = "\.\/(small_print\.[0-9a-f]{10}\.zip)";/.exec(src)?.[1];
+  return { facts, worker, src, folder, bundle };
+}
+
+test('the on-device reader: Pyodide runtime and Python bundle, sizes stated on the page', () => {
+  const { facts, src, folder, bundle } = runtime();
+  assert.ok(folder && bundle, 'the worker names its runtime folder and bundle');
+  const files = ['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json'];
+  assert.deepEqual(readdirSync(join(DIST, 'assets', folder)).sort(), [...files].sort());
+  let total = 0;
+  for (const f of files) {
+    const size = statSync(join(DIST, 'assets', folder, f)).size;
+    assert.ok(size < 25 * 1024 * 1024, `${f} fits the Pages per-file limit`);
+    total += size;
+  }
+  total += statSync(join(DIST, 'assets', bundle)).size;
+  assert.equal(Number(facts.bytes), total, 'the size the page states is the real total');
+  assert.equal(facts.pyodide, JSON.parse(readFileSync(join(DIST, '..', 'node_modules', 'pyodide', 'package.json'), 'utf8')).version);
+  assert.match(facts.python, /^3\.14\.\d+$/);
+  assert.ok(Number(facts.rules) >= 40);
+  // The worker's byte counter knows the two imported modules' sizes.
+  const sizes = JSON.parse(/const SIZES = (\{[^}]+\});/.exec(src)[1]);
+  assert.equal(sizes['pyodide.asm.mjs'], statSync(join(DIST, 'assets', folder, 'pyodide.asm.mjs')).size);
+  // The bundle holds the browser's Python only: never the model code.
+  const names = new Set(readFileSync(join(DIST, 'assets', bundle), 'latin1').match(/small_print\/\w+\.py/g));
+  assert.deepEqual([...names].sort(), ['__init__', 'local', 'normalise', 'rules', 'segment', 'verify'].map((n) => `small_print/${n}.py`));
+  // local.js starts the hashed worker; app.js imports the hashed local.js.
+  const assets = readdirSync(join(DIST, 'assets'));
+  const local = assets.find((f) => /^local\.[0-9a-f]{10}\.js$/.test(f));
+  assert.match(read(`assets/${local}`), new RegExp(`new URL\\("\\./${runtime().worker.replace('.', '\\.')}"`));
+});
+
+test('THIRD-PARTY-NOTICES.txt ships with every runtime component and its licence', () => {
+  assert.ok(existsSync(join(DIST, 'THIRD-PARTY-NOTICES.txt')));
+  const n = read('THIRD-PARTY-NOTICES.txt');
+  const { facts, folder } = runtime();
+  assert.ok(n.includes(`Pyodide ${facts.pyodide}`) && n.includes(`CPython ${facts.python}`) && n.includes(folder));
+  for (const needle of [
+    'Mozilla Public License Version 2.0',
+    'PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2',
+    'Licenses and Acknowledgements for Incorporated Software',
+    'HACL* Contributors',
+    'Emscripten authors',
+    'Rich Felker',
+    'Pierre Curto',
+    'For Zstandard software',
+    'Julian R Seward',
+    'SQLite',
+    'XZ Utils',
+  ]) assert.ok(n.includes(needle), needle);
+  assert.match(read('index.html'), /href="THIRD-PARTY-NOTICES\.txt"/, 'the colophon links the notices');
 });
 
 test('demo data: every quote is the exact text at its offsets', () => {
@@ -57,27 +121,10 @@ test('demo data: every quote is the exact text at its offsets', () => {
   }
 });
 
-function serve(dir) {
-  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.txt': 'text/plain' };
-  const server = createServer((req, res) => {
-    const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
-    let file = join(dir, path);
-    if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
-    if (!file.startsWith(dir) || !existsSync(file)) {
-      res.writeHead(404, { 'content-type': 'text/plain' });
-      res.end('not found');
-      return;
-    }
-    res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' });
-    res.end(readFileSync(file));
-  });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
-}
-
 const chromePath = findChrome();
 
 test('the static page loads and the exhibits work with no API at all', { skip: !chromePath && 'Chrome not found (set CHROME_PATH)' }, async () => {
-  const server = await serve(DIST);
+  const server = await serveDist(DIST);
   const chrome = await launchChrome(chromePath);
   try {
     for (const plan of [
@@ -86,7 +133,7 @@ test('the static page loads and the exhibits work with no API at all', { skip: !
     ]) {
       const page = await chrome.openPage(plan);
       await page.navigate(`http://127.0.0.1:${server.address().port}/`);
-      await page.waitFor(`document.querySelector('#service-status').dataset.state === 'offline'`);
+      await page.waitFor(`document.querySelector('#service-status').dataset.state === 'rules'`);
       await page.waitFor(`document.querySelectorAll('.exhibit').length === 3`);
       await page.evaluate(`document.querySelectorAll('.exhibit')[2].click(), true`);
       await page.waitFor(`document.querySelectorAll('#doc .note').length === 40`);
@@ -103,10 +150,10 @@ test('the static page loads and the exhibits work with no API at all', { skip: !
       assert.equal(r.strip, 40);
       assert.match(r.advice, /Not legal advice/i);
       assert.ok(r.sw <= r.iw, `no horizontal scroll at ${plan.width}px`);
-      // Pasting while the API is unreachable gives a clear message.
-      await page.evaluate(`(() => { const t = document.querySelector('#paste'); t.value = 'You agree to these terms.'; t.dispatchEvent(new Event('input')); document.querySelector('#read').click(); return true; })()`);
-      await page.waitFor(`!document.querySelector('#form-error').hidden`);
-      assert.match(await page.evaluate(`document.querySelector('#form-error').textContent`), /out of reach/);
+      // With no API, pasted text is read on this device by the rule set.
+      await page.evaluate(`(() => { const t = document.querySelector('#paste'); t.value = 'We may terminate your account at any time.'; t.dispatchEvent(new Event('input')); document.querySelector('#read').click(); return true; })()`);
+      await page.waitFor(`/Rule-based reading, no AI/.test(document.querySelector('#provenance').textContent)`, 60000);
+      assert.equal(await page.evaluate(`document.querySelector('#doc mark.q').textContent`), 'We may terminate your account at any time');
       // Only the expected failed /api/status request (and fonts, if offline) may log.
       const unexpected = page.problems.filter((p) => !/\/api\/status|404|fonts\.(googleapis|gstatic)/.test(`${p.text} ${p.url ?? ''}`));
       assert.deepEqual(unexpected, []);

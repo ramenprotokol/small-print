@@ -5,10 +5,13 @@ import {
   chunkText,
   combineParts,
   cpLength,
+  findingsByRule,
+  formatBytes,
   guessTitle,
   hasReadableText,
   looksLikeHtml,
   makeIndexer,
+  markRuns,
   modelName,
   prepText,
   tally,
@@ -176,4 +179,65 @@ test('guessTitle prefers a heading, else trims the first clause', () => {
   const long = 'By using this service you agree to all of the following terms and conditions without exception.';
   const t = guessTitle({ text: long, segments: [{ kind: 'clause', id: 1, start: 0, end: long.length }] });
   assert.ok(t.length <= 60 && t.endsWith('…'));
+});
+
+test('markRuns splits a clause into plain and highlighted runs, first mark wins on overlap', () => {
+  const runs = markRuns(10, 40, [{ start: 12, end: 20 }, { start: 15, end: 30 }, { start: 35, end: 50 }]);
+  assert.deepEqual(runs, [
+    { start: 10, end: 12, mark: -1 },
+    { start: 12, end: 20, mark: 0 },
+    { start: 20, end: 30, mark: 1 },
+    { start: 30, end: 35, mark: -1 },
+    { start: 35, end: 40, mark: 2 }, // clipped to the clause
+  ]);
+  assert.deepEqual(markRuns(0, 5, []), [{ start: 0, end: 5, mark: -1 }]);
+  assert.deepEqual(markRuns(0, 5, [{ start: 0, end: 5 }, { start: 1, end: 2 }]), [{ start: 0, end: 5, mark: 0 }]);
+  // Runs always tile the clause exactly.
+  const tiled = markRuns(3, 90, [{ start: 50, end: 60 }, { start: 1, end: 7 }, { start: 58, end: 95 }]);
+  assert.equal(tiled[0].start, 3);
+  assert.equal(tiled.at(-1).end, 90);
+  tiled.slice(1).forEach((r, i) => assert.equal(r.start, tiled[i].end));
+});
+
+test('combineParts keeps rule findings, engine and checklist, with offsets shifted', () => {
+  const part = (text, extra = {}) => ({
+    text,
+    sha256: 'x',
+    segments: [{ kind: 'clause', start: 0, end: text.length, id: 1 }],
+    analysis: {
+      source: 'rules', model: null, received: 2, verified: 2, dropped: 0, dropped_reasons: {}, relocated: 0,
+      readings: [{ id: 1, favours: 'them', confidence: 'high', reading: 'r', quote_start: 0, quote_end: 4, rule: 'a', topic: 'A',
+        findings: [{ rule: 'a', topic: 'A', favours: 'them', quote_start: 0, quote_end: 4 }, { rule: 'b', topic: 'B', favours: 'you', quote_start: 5, quote_end: 9 }] }],
+      engine: { rules: 51 }, checked: [{ rule: 'a' }, { rule: 'b' }],
+      ...extra,
+    },
+    notice: null,
+  });
+  const doc = combineParts([part('abcd efgh'), part('ijkl mnop')]);
+  assert.equal(doc.engine.rules, 51);
+  assert.equal(doc.checked.length, 2);
+  const second = doc.readings[1];
+  assert.equal(second.id, 2);
+  assert.deepEqual(second.findings.map((f) => [f.quote_start, f.quote_end]), [[11, 15], [16, 20]]);
+  assert.equal(doc.text.slice(second.findings[1].quote_start, second.findings[1].quote_end), 'mnop');
+  assert.equal(doc.stats.verified, 4);
+});
+
+test('findingsByRule indexes every finding by rule, in document order', () => {
+  const readings = [
+    { id: 3, findings: [{ rule: 'arbitration', topic: 'Forced arbitration', favours: 'them' }, { rule: 'jury_waiver', topic: 'Jury-trial waiver', favours: 'them' }] },
+    { id: 7, findings: [{ rule: 'arbitration', topic: 'Forced arbitration', favours: 'them' }] },
+    { id: 9, favours: 'you' }, // a model reading: no findings
+  ];
+  assert.deepEqual(findingsByRule(readings), [
+    { rule: 'arbitration', topic: 'Forced arbitration', favours: 'them', ids: [3, 7] },
+    { rule: 'jury_waiver', topic: 'Jury-trial waiver', favours: 'them', ids: [3] },
+  ]);
+});
+
+test('formatBytes reports decimal megabytes like a browser does', () => {
+  assert.equal(formatBytes(13555056), '13.6 MB');
+  assert.equal(formatBytes(119077), '119 kB');
+  assert.equal(formatBytes(10), '1 kB');
+  assert.equal(formatBytes(-1), '');
 });

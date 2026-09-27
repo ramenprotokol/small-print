@@ -212,6 +212,7 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 }
 .service-status strong { color: var(--ink); }
 .service-status[data-state="live"] strong::before,
+.service-status[data-state="rules"] strong::before,
 .service-status[data-state="demo"] strong::before,
 .service-status[data-state="offline"] strong::before {
   content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%;
@@ -229,6 +230,13 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .progress-parts li[data-state="done"] .pp-state::before { content: "\2713\00a0"; }
 .progress-parts li[data-state="failed"] .pp-state { color: var(--notice); font-weight: 700; }
 .progress-clock { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.progress-parts.local li { grid-template-columns: 8.5rem minmax(0, 1fr) auto; }
+/* The runtime download, drawn as a highlighter stroke going across. */
+.meter {
+  height: 0.62rem; margin: 0.8rem 0 0.1rem; background: var(--rule); overflow: hidden;
+  border-radius: 0.15rem 0.45rem 0.2rem 0.5rem / 0.35rem 0.2rem 0.4rem 0.25rem; transform: skewX(-12deg);
+}
+.meter-fill { display: block; height: 100%; width: 0; background: var(--mk-unclear); transition: width 160ms linear; }
 
 .exhibits, .history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
 .exhibits { gap: 1.1rem; padding-right: 6px; }
@@ -299,6 +307,7 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .notices { margin: 0.8rem 0; }
 .notice { margin: 0.35rem 0; padding: 0.55rem 0.8rem; border-left: 3px solid var(--notice); background: var(--paper); font-size: 0.9rem; }
 .notice.subtle { border-left-color: var(--rule-strong); color: var(--muted); }
+.notice.caveat { border-left-color: var(--rule-strong); }
 .tally { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.1rem 0 0.7rem; }
 .tally-btn {
   display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer;
@@ -309,6 +318,22 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .tally-btn:disabled { opacity: 0.55; cursor: default; }
 .tally-btn.static { cursor: default; }
 .tally-n { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Rule readings: what the rules found, and what they looked for in vain. */
+.checklist { margin: 0.2rem 0 0.9rem; padding: 0.85rem 0 0; border-top: 1px solid var(--rule); }
+.check-h { margin-bottom: 0.55rem; }
+.check-row { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr); gap: 0.2rem 0.6rem; align-items: baseline; padding: 0.3rem 0; }
+.check-group { font: 700 0.72rem/1.9 var(--sans); color: var(--muted); }
+.check-found { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.check-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; text-align: left;
+  font: 600 0.76rem/1.2 var(--sans); color: var(--ink);
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; padding: 0.32rem 0.5rem;
+}
+.check-btn .sw { width: 0.95rem; height: 0.5rem; }
+.check-btn:hover { border-color: var(--rule-strong); }
+.check-where { font-weight: 400; color: var(--muted); font-variant-numeric: lining-nums tabular-nums; }
+.check-missing { margin: 0.75rem 0 0; font-size: 0.82rem; color: var(--muted); max-width: 46rem; }
+.check-missing-lead { font-weight: 700; color: var(--ink); }
 .keys-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.2rem; margin: 0.6rem 0 0; }
 .keys { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .offsets {
@@ -371,6 +396,8 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .cl[data-fav="none"] {
   text-decoration: underline dotted var(--muted); text-decoration-thickness: 1px; text-underline-offset: 0.3em;
 }
+/* In a rule reading an unmarked clause simply matched no rule. */
+.doc.rules .cl[data-fav="none"] { text-decoration: none; }
 .cl.hot, .cl.active { box-shadow: inset 0 -2px 0 var(--ink); }
 .cl.active { outline: none; }
 .num {
@@ -398,6 +425,10 @@ mark.q {
 .note-head .sw { width: 0.95rem; height: 0.52rem; margin-right: 0.35rem; vertical-align: 0.02em; }
 .note-label { font-weight: 700; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .note-conf { font-size: 0.74rem; color: var(--muted); }
+.note-topic { font-weight: 700; }
+.note-also { display: block; margin-top: 0.2rem; font-size: 0.76rem; color: var(--muted); }
+.note-also-lead { font-weight: 700; }
+.note-also-item .sw { width: 0.8rem; height: 0.45rem; margin-right: 0.3rem; vertical-align: 0.02em; }
 .note-ref { display: none; margin-top: 0.2rem; font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .show-refs .note-ref, .note.active .note-ref { display: block; }
 .note.hot, .note.active { background: var(--paper-raised); box-shadow: -3px 0 0 var(--ink); }
@@ -475,8 +506,12 @@ body.has-result { padding-right: var(--strip); }
 }
 .colophon p { margin: 0; font: 400 0.92rem/1.6 var(--serif); color: var(--muted); max-width: 34rem; }
 .colophon p + p { margin-top: 0.7rem; }
+.colophon a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
 
 @media (max-width: 520px) {
+  .check-row { grid-template-columns: minmax(0, 1fr); }
+  .progress-parts.local li { grid-template-columns: minmax(0, 1fr) auto; }
+  .progress-parts.local .pp-size { grid-column: 1 / -1; grid-row: 2; }
   .masthead-inner { flex-direction: column; align-items: flex-start; padding-top: 1.6rem; }
   .lamp { align-self: flex-start; }
   textarea { padding-left: 2.6rem; background-position: -0.5rem 0, 0 0.55rem, 0 0; }

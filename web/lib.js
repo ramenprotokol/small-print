@@ -155,6 +155,8 @@ export function combineParts(responses) {
   const sources = new Set();
   const models = new Set();
   const stats = { received: 0, verified: 0, dropped: 0, relocated: 0, reasons: {} };
+  let engine = null;
+  let checked = null;
   let offset = 0;
   let idBase = 0;
   let budget = null;
@@ -185,9 +187,14 @@ export function combineParts(responses) {
       info.source = a.source;
       info.model = a.model || null;
       if (a.model) models.add(a.model);
+      const shift = (x) => ({ ...x, quote_start: x.quote_start + offset, quote_end: x.quote_end + offset });
       for (const x of a.readings) {
-        readings.push({ ...x, id: x.id + idBase, quote_start: x.quote_start + offset, quote_end: x.quote_end + offset, model: a.model || null, part: i + 1 });
+        const r = { ...shift(x), id: x.id + idBase, model: a.model || null, part: i + 1 };
+        if (Array.isArray(x.findings)) r.findings = x.findings.map(shift);
+        readings.push(r);
       }
+      if (a.engine) engine = a.engine;
+      if (Array.isArray(a.checked)) checked = a.checked;
       stats.received += a.received;
       stats.verified += a.verified;
       stats.dropped += a.dropped;
@@ -216,6 +223,8 @@ export function combineParts(responses) {
     models: [...models],
     notices,
     budget,
+    engine,
+    checked,
     unread,
     parts,
     failed: parts.filter((p) => p.failed).length,
@@ -247,4 +256,53 @@ export function guessTitle(doc) {
   let t = doc.text.slice(u(first.start), u(first.end)).replace(/\s+/g, ' ').trim();
   if (first.kind !== 'heading' && t.length > 60) t = `${t.slice(0, 57).replace(/\s+\S*$/, '')}…`;
   return t || 'Pasted document';
+}
+
+// Split [start, end) into runs for highlighting several quotes in one
+// clause. `marks` are { start, end, ... } in priority order: where two
+// overlap, the earlier one wins. Returns [{ start, end, mark }] covering the
+// whole range, with mark = the index into `marks`, or -1 for plain text.
+export function markRuns(start, end, marks) {
+  const cuts = new Set([start, end]);
+  marks.forEach((m) => {
+    const s = Math.max(start, Math.min(m.start, end));
+    const e = Math.max(start, Math.min(m.end, end));
+    if (s < e) cuts.add(s).add(e);
+  });
+  const points = [...cuts].sort((a, b) => a - b);
+  const runs = [];
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    let mark = -1;
+    for (let k = 0; k < marks.length; k += 1) {
+      if (marks[k].start <= a && b <= marks[k].end) { mark = k; break; }
+    }
+    const last = runs[runs.length - 1];
+    if (last && last.mark === mark && last.end === a) last.end = b;
+    else runs.push({ start: a, end: b, mark });
+  }
+  return runs;
+}
+
+// Rule readings indexed by rule: { rule, topic, favours, ids } for every
+// rule that found something, in the order the document first shows it.
+export function findingsByRule(readings) {
+  const out = new Map();
+  for (const r of readings) {
+    for (const f of r.findings || []) {
+      if (!f.rule) continue;
+      if (!out.has(f.rule)) out.set(f.rule, { rule: f.rule, topic: f.topic, favours: f.favours, ids: [] });
+      const ids = out.get(f.rule).ids;
+      if (ids[ids.length - 1] !== r.id) ids.push(r.id);
+    }
+  }
+  return [...out.values()];
+}
+
+// 13,566,000 -> "13.6 MB" (decimal megabytes, as browsers report downloads).
+export function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '';
+  if (n < 1e6) return `${Math.max(1, Math.round(n / 1e3))} kB`;
+  return `${(n / 1e6).toFixed(1)} MB`;
 }

@@ -1,4 +1,6 @@
-// small print: the page. Talks to /api (the Python Worker), renders the
+// small print: the page. Reads pasted text on this device with the Python
+// rule set (local.js, Pyodide in a worker), or through /api (the Python
+// Worker and the model) when a server with a key is there, then renders the
 // marked-up document, margin notes and the "who it favours" strip.
 import {
   FAVOURS,
@@ -8,23 +10,30 @@ import {
   chunkText,
   combineParts,
   cpLength,
+  findingsByRule,
+  formatBytes,
   formatInt,
   guessTitle,
   hasReadableText,
   htmlToText,
   looksLikeHtml,
   makeIndexer,
+  markRuns,
   modelName,
   plural,
   prepText,
   tally,
 } from "./lib.js";
+import { canReadLocally, createLocalReader } from "./local.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const API = ($('meta[name="sp-api"]')?.content || '').replace(/\/$/, '');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const wideLayout = matchMedia('(min-width: 1100px)');
 const LABEL = { you: 'Favours you', them: 'Favours them', neutral: 'Neutral', unclear: 'Unclear', none: 'No reading' };
+const labelFor = (doc, fav) => (fav === 'none' && doc?.kind === 'rules' ? 'No rule matched' : LABEL[fav]);
+// A rule's "confidence" is how specific the wording it matched is.
+const MATCH = { high: 'strong match', medium: 'fair match', low: 'weak match' };
 // How long to wait for one part. The Worker reports its own worst case (plus
 // a margin) in /api/status; this default is used until then.
 const DEFAULT_PART_TIMEOUT_S = 480;
@@ -45,6 +54,13 @@ const el = (tag, cls, text) => {
   if (text != null) n.textContent = text;
   return n;
 };
+
+// The Python runtime the build ships (sizes measured at build time):
+// <meta name="sp-runtime" content="bytes=… rules=… pyodide=… python=…">.
+const RUNTIME = Object.fromEntries(
+  ($('meta[name="sp-runtime"]')?.content || '').split(/\s+/).filter(Boolean).map((kv) => kv.split('=')),
+);
+const localReader = RUNTIME.bytes && canReadLocally() ? createLocalReader() : null;
 
 // ---------------------------------------------------------------- storage
 // Per-viewer conveniences only (theme, recent documents). Any of this may be
@@ -140,15 +156,25 @@ function renderServiceStatus() {
       + `${plural(left, 'reading')} left for you today `
       + `(${formatInt(service.budget.remaining)} of ${formatInt(service.budget.limit)} across all visitors); resets at 00:00 UTC. `
       + `One reading covers up to ${formatInt(PART_CHARS)} characters.`;
-  } else if (service.state === 'demo') {
-    lead.textContent = 'Demo mode.';
-    rest.textContent = ' This server has no AI key, so pasted text gets a clause map without readings. The three exhibits are fully read.';
+  } else if (localReader) {
+    box.dataset.state = 'rules';
+    lead.textContent = 'Rule-based reading, no AI.';
+    rest.textContent = ` Pasted text is read in this browser by ${formatInt(Number(RUNTIME.rules) || 0)} hand-written rules, `
+      + 'in Python (Pyodide: CPython compiled to WebAssembly). Your text never leaves this device. '
+      + (localReader.runtime
+        ? `Python ${localReader.runtime.python} is loaded.`
+        : `The first reading downloads the Python runtime, ${formatBytes(Number(RUNTIME.bytes))}; after that it normally comes from your browser's cache.`);
   } else {
-    lead.textContent = 'The reading service is out of reach.';
-    rest.textContent = ' The three exhibits below still open.';
+    lead.textContent = 'Pasted text cannot be read in this browser.';
+    rest.textContent = ' The on-device reader needs WebAssembly and module workers. The three exhibits below still open.';
   }
   box.replaceChildren(lead, rest);
+  // The colophon describes whichever reader this page is using.
+  const mode = service.state === 'live' ? 'live' : 'rules';
+  document.querySelectorAll('.mode-copy').forEach((n) => { n.hidden = n.dataset.mode !== mode; });
 }
+
+const readsLocally = () => service.state !== 'live';
 
 // ----------------------------------------------------------------- intake
 function currentInput() {
@@ -173,6 +199,14 @@ function updatePlan() {
   if (chars > MAX_CHARS) {
     plan.classList.add('over');
     plan.textContent = `${formatInt(chars)} characters: over the ${formatInt(MAX_CHARS)} limit. Trim it, or paste one section at a time.`;
+    return;
+  }
+  if (service.state === 'checking') {
+    plan.textContent = `${formatInt(chars)} characters${converted ? ' (converted from HTML)' : ''}.`;
+    return;
+  }
+  if (readsLocally()) {
+    plan.textContent = `${formatInt(chars)} characters${converted ? ' (converted from HTML)' : ''}. Read here by the rule set; nothing is uploaded.`;
     return;
   }
   const parts = chunkText(text).length;
@@ -287,9 +321,8 @@ async function onSubmit(event) {
   if (!chars) return formError('Paste the terms first.');
   if (!hasReadableText(text)) return formError('There is no readable text in that paste: only spaces or invisible characters.');
   if (chars > MAX_CHARS) return formError(`That is ${formatInt(chars)} characters; the limit is ${formatInt(MAX_CHARS)}.`);
-  if (service.state === 'offline') {
-    return formError('The reading service is out of reach, so pasted text cannot be read right now. The exhibits still work.');
-  }
+  if (service.state === 'checking') await service.checked;
+  if (readsLocally()) return readLocally(text, converted);
   const parts = chunkText(text);
   const button = $('#read');
   button.disabled = true;
@@ -312,6 +345,98 @@ async function onSubmit(event) {
   } finally {
     progress.done();
     button.disabled = false;
+    updatePlan();
+  }
+}
+
+// The progress box for an on-device reading: the runtime download (first
+// time only), then the reading itself.
+function localProgressUI() {
+  const box = $('#progress');
+  const total = Number(RUNTIME.bytes) || 0;
+  const warm = !!localReader.runtime;
+  const list = el('ol', 'progress-parts local');
+  const step = (name, state) => {
+    const li = el('li');
+    li.dataset.state = state;
+    const detail = el('span', 'pp-state', state === 'done' ? 'loaded' : 'waiting');
+    li.append(el('span', 'pp-name', name), el('span', 'pp-size'), detail);
+    list.append(li);
+    return li;
+  };
+  const rt = step('Python runtime', warm ? 'done' : 'reading');
+  const rd = step('Rule set', 'waiting');
+  const set = (li, state, label, size) => {
+    li.dataset.state = state;
+    li.querySelector('.pp-state').textContent = label;
+    if (size !== undefined) li.querySelector('.pp-size').textContent = size;
+  };
+  const meter = el('div', 'meter');
+  meter.setAttribute('role', 'progressbar');
+  meter.setAttribute('aria-label', 'Python runtime download');
+  meter.setAttribute('aria-valuemin', '0');
+  meter.setAttribute('aria-valuemax', '100');
+  const fill = el('i', 'meter-fill');
+  meter.append(fill);
+  meter.hidden = warm;
+  const clock = el('p', 'progress-clock');
+  const lead = warm ? 'Reading on this device.' : `Reading on this device. First, the Python runtime (${formatBytes(total)}); later readings reuse it.`;
+  box.replaceChildren(el('p', 'progress-lead', lead), list, meter, clock);
+  box.hidden = false;
+  if (!warm) set(rt, 'reading', 'downloading…', `0 of ${formatBytes(total)}`);
+  const t0 = performance.now();
+  const tick = () => { clock.textContent = `${Math.floor((performance.now() - t0) / 1000)} s elapsed`; };
+  tick();
+  const timer = setInterval(tick, 1000);
+  let pct = -1;
+  return {
+    update(ev) {
+      if (ev.stage === 'download') {
+        const frac = total ? Math.min(1, ev.loaded / total) : 0;
+        const now = Math.floor(frac * 100);
+        fill.style.width = `${(frac * 100).toFixed(1)}%`;
+        if (now !== pct) {
+          pct = now;
+          meter.setAttribute('aria-valuenow', String(now));
+        }
+        const size = `${formatBytes(Math.min(ev.loaded, total))} of ${formatBytes(total)}`;
+        set(rt, 'reading', frac >= 1 ? 'starting Python…' : 'downloading…', size);
+      } else if (ev.stage === 'reading') {
+        if (!warm) set(rt, 'done', `ready in ${(ev.runtime.ms / 1000).toFixed(1)} s`, `Python ${ev.runtime.python}`);
+        meter.hidden = true;
+        set(rd, 'reading', 'reading…');
+      }
+    },
+    done() {
+      clearInterval(timer);
+      box.hidden = true;
+    },
+  };
+}
+
+async function readLocally(text, converted) {
+  if (!localReader) {
+    formError('This browser cannot run the on-device reader: it needs WebAssembly and module workers. The exhibits still open.');
+    return;
+  }
+  const button = $('#read');
+  button.disabled = true;
+  const progress = localProgressUI();
+  try {
+    const { payload, runtime } = await localReader.read(text, progress.update);
+    if (!payload.segments.some((s) => s.kind === 'clause')) {
+      formError(payload.notice?.message || 'No clauses found in that text.');
+      return;
+    }
+    const doc = buildDoc([payload], { kind: 'rules', converted, runtime });
+    show(doc);
+    remember(doc);
+  } catch (err) {
+    formError(err.message);
+  } finally {
+    progress.done();
+    button.disabled = false;
+    renderServiceStatus();
     updatePlan();
   }
 }
@@ -422,6 +547,16 @@ function partsText(nums) {
 }
 
 function provenanceText(doc) {
+  if (doc.kind === 'rules') {
+    const e = doc.engine || {};
+    const clauses = doc.segments.filter((x) => x.kind === 'clause').length;
+    let t = `Rule-based reading, no AI: ${plural(Number(e.rules) || 0, 'hand-written rule')} found something in ${formatInt(doc.readings.length)} of ${plural(clauses, 'clause')}.`;
+    if (doc.runtime) {
+      t += ` Read by Python ${e.python || doc.runtime.python} (Pyodide ${doc.runtime.pyodide}) in this browser`
+        + `${Number.isFinite(e.elapsed_ms) ? ` in ${formatInt(Math.max(1, e.elapsed_ms))} ms` : ''}; the text did not leave this device.`;
+    }
+    return t;
+  }
   if (doc.kind === 'demo') {
     return 'Readings written by hand for this fictional document, in the same format the model returns, and checked by the same Python verifier.';
   }
@@ -452,13 +587,21 @@ function verificationText(doc) {
   let t = `${plural(s.verified, 'quote')} checked word for word against the text, each inside its own clause, and kept; ${formatInt(s.dropped)} dropped`;
   t += reasons.length ? ` (${reasons.join('; ')}).` : '.';
   if (s.relocated) t += ` ${plural(s.relocated, 'reading')} moved to the clause where the quoted words actually are.`;
-  if (doc.unread) t += ` ${plural(doc.unread, 'clause')} without a reading.`;
+  if (doc.unread) t += doc.kind === 'rules' ? ` ${plural(doc.unread, 'clause')} matched no rule.` : ` ${plural(doc.unread, 'clause')} without a reading.`;
   return t;
 }
 
+const span = (r) => `${formatInt(r.quote_start)}–${formatInt(r.quote_end)}`;
+
 function refText(r, seg, doc) {
-  let t = `¶ ${seg.id} · quote at characters ${formatInt(r.quote_start)}–${formatInt(r.quote_end)}`;
-  if (doc.kind !== 'demo' && r.model) t += ` · read by ${modelName(r.model)}`;
+  let t = `¶ ${seg.id} · quote at characters ${span(r)}`;
+  if (doc.kind === 'rules' && r.rule) {
+    t += ` · rule ${r.rule}`;
+    const also = (r.findings || []).slice(1);
+    if (also.length) t += `; also ${also.map((f) => `${f.rule} at ${span(f)}`).join(', ')}`;
+  } else if (doc.kind !== 'demo' && r.model) {
+    t += ` · read by ${modelName(r.model)}`;
+  }
   return t;
 }
 
@@ -467,14 +610,31 @@ function noteFor(r, seg, doc) {
   note.setAttribute('role', 'note');
   note.dataset.fav = r.favours;
   note.id = `n${seg.id}`;
+  const rules = doc.kind === 'rules' && r.topic;
   const head = el('span', 'note-head');
-  head.append(el('span', 'sw'), el('span', 'note-label', LABEL[r.favours]), el('span', 'note-conf', `, ${r.confidence} confidence.`));
+  head.append(el('span', 'sw'), el('span', 'note-label', LABEL[r.favours]), el('span', 'note-conf', rules ? `, ${MATCH[r.confidence]}.` : `, ${r.confidence} confidence.`));
   const ref = el('span', 'note-ref', refText(r, seg, doc));
   ref.title = 'Where the highlighted quote sits in the text as shown, counted in Unicode characters from the start.';
   // Run-in head: the label leads straight into the reading, as marginalia do.
   const body = el('span', 'note-body');
-  body.append(head, ' ', el('span', 'note-reading', r.reading));
-  note.append(body, ref);
+  body.append(head, ' ');
+  if (rules) body.append(el('span', 'note-topic', `${r.topic}.`), ' ');
+  body.append(el('span', 'note-reading', r.reading));
+  note.append(body);
+  const also = rules ? (r.findings || []).slice(1) : [];
+  if (also.length) {
+    const line = el('span', 'note-also');
+    line.append(el('span', 'note-also-lead', 'Also: '));
+    also.forEach((f, i) => {
+      const item = el('span', 'note-also-item');
+      item.dataset.fav = f.favours;
+      item.append(el('span', 'sw'), el('span', null, f.topic), el('span', 'note-also-fav', ` (${LABEL[f.favours].toLowerCase()})`));
+      item.title = f.reading;
+      line.append(item, i + 1 < also.length ? '; ' : '.');
+    });
+    note.append(line);
+  }
+  note.append(ref);
   return note;
 }
 
@@ -522,6 +682,7 @@ function renderDocument(doc) {
       rulesAt.get(p.segStart).push(p);
     }
   }
+  article.classList.toggle('rules', doc.kind === 'rules');
   const frag = document.createDocumentFragment();
   let line = null;
   let prevEnd = 0;
@@ -561,13 +722,17 @@ function renderDocument(doc) {
       const num = el('span', 'num', String(seg.id));
       num.setAttribute('aria-hidden', 'true');
       span.append(num);
-      const qs = r ? Math.max(seg.start, Math.min(r.quote_start, seg.end)) : 0;
-      const qe = r ? Math.max(seg.start, Math.min(r.quote_end, seg.end)) : 0;
-      if (r && qs < qe) {
-        const mark = el('mark', 'q', slice(qs, qe));
-        span.append(slice(seg.start, qs), mark, slice(qe, seg.end));
-      } else {
-        span.append(slice(seg.start, seg.end));
+      // Every quote in the clause is highlighted in its own reading's colour;
+      // where two overlap, the clause's label (the first) wins.
+      const marks = r ? (r.findings?.length ? r.findings : [r]) : [];
+      for (const run of markRuns(seg.start, seg.end, marks.map((m) => ({ start: m.quote_start, end: m.quote_end })))) {
+        if (run.mark < 0) {
+          span.append(slice(run.start, run.end));
+        } else {
+          const mark = el('mark', run.mark === 0 ? 'q' : 'q also', slice(run.start, run.end));
+          if (run.mark > 0) mark.dataset.fav = marks[run.mark].favours;
+          span.append(mark);
+        }
       }
       line.append(span);
       if (r) line.append(noteFor(r, seg, doc));
@@ -596,7 +761,7 @@ function renderTally(doc) {
   if (doc.unread) {
     const s = el('span', 'tally-btn static');
     s.dataset.fav = 'none';
-    s.append(el('span', 'sw'), el('span', 'tally-label', LABEL.none), el('span', 'tally-n', formatInt(doc.unread)));
+    s.append(el('span', 'sw'), el('span', 'tally-label', labelFor(doc, 'none')), el('span', 'tally-n', formatInt(doc.unread)));
     buttons.push(s);
   }
   box.replaceChildren(...buttons);
@@ -619,9 +784,66 @@ function renderNotices(doc) {
     const nums = doc.parts.filter((p) => p.failed).map((p) => p.part);
     notes.unshift(el('p', 'notice', `${nums.length === 1 ? 'One part' : `${nums.length} parts`} could not be read (${partsText(nums)}). The rest is below; each unread part has a button to read it again.`));
   }
+  if (doc.kind === 'rules') {
+    const caveat = el('p', 'notice caveat');
+    caveat.append(
+      el('strong', null, 'What rules can miss. '),
+      'The rules look for set phrases. They miss clauses worded in ways they do not know, can misread words used in another sense, '
+      + 'and cannot weigh how much a clause matters or how it plays with the rest. An unmarked clause matched no rule; that does not make it harmless.',
+    );
+    notes.push(caveat);
+  }
   box.replaceChildren(...notes);
   if (doc.converted) box.append(el('p', 'notice subtle', 'This text was converted from HTML in your browser before reading; offsets count characters in the text as shown.'));
   box.hidden = !box.childElementCount;
+}
+
+// For a rule reading: every rule that found something, grouped by who it
+// favours (click one to step through its clauses), and the concerns the
+// rules looked for and did not find.
+const GROUPS = [['them', 'Favour them'], ['unclear', 'Unclear'], ['you', 'Favour you'], ['neutral', 'Neutral']];
+
+function renderChecklist(doc) {
+  const box = $('#checklist');
+  if (doc.kind !== 'rules' || !Array.isArray(doc.checked)) {
+    box.hidden = true;
+    box.replaceChildren();
+    return;
+  }
+  const found = findingsByRule(doc.readings);
+  const foundIds = new Set(found.map((f) => f.rule));
+  const head = el('h3', 'side-h check-h', `What the rules found: ${formatInt(found.length)} of ${formatInt(doc.checked.length)} kinds of clause`);
+  const parts = [head];
+  for (const [fav, label] of GROUPS) {
+    const mine = found.filter((f) => f.favours === fav);
+    if (!mine.length) continue;
+    const row = el('div', 'check-row');
+    const list = el('ul', 'check-found');
+    list.setAttribute('aria-label', label);
+    for (const f of mine) {
+      const li = el('li');
+      const b = el('button', 'check-btn');
+      b.type = 'button';
+      b.dataset.fav = f.favours;
+      b.dataset.rule = f.rule;
+      const where = `¶ ${f.ids.slice(0, 3).join(', ')}${f.ids.length > 3 ? ', …' : ''}`;
+      b.append(el('span', 'sw'), el('span', 'check-topic', f.topic), el('span', 'check-where', where));
+      b.setAttribute('aria-label', `${f.topic}, in ${plural(f.ids.length, 'clause')}: jump to the next one.`);
+      b.addEventListener('click', () => jumpToRule(f.rule));
+      li.append(b);
+      list.append(li);
+    }
+    row.append(el('span', 'check-group', label), list);
+    parts.push(row);
+  }
+  const missing = doc.checked.filter((c) => c.favours === 'them' && !foundIds.has(c.rule)).map((c) => c.topic);
+  if (missing.length) {
+    const p = el('p', 'check-missing');
+    p.append(el('span', 'check-missing-lead', 'Looked for, not found: '), `${missing.join(' · ')}.`, el('span', 'check-missing-tail', ' Not finding a phrase is not proof the terms lack it.'));
+    parts.push(p);
+  }
+  box.replaceChildren(...parts);
+  box.hidden = false;
 }
 
 function show(doc, { scroll = true } = {}) {
@@ -634,6 +856,7 @@ function show(doc, { scroll = true } = {}) {
   $('#verification').textContent = verificationText(doc);
   renderNotices(doc);
   renderTally(doc);
+  renderChecklist(doc);
   renderDocument(doc);
   $('#where').textContent = '';
   document.body.classList.add('has-result');
@@ -782,7 +1005,7 @@ function setActive(i) {
   c.scrollIntoView({ block: 'center', behavior: reducedMotion.matches ? 'auto' : 'smooth' });
   const fav = c.dataset.fav;
   const ref = note?.querySelector('.note-ref')?.textContent;
-  $('#where').textContent = `Clause ${c.dataset.id} of ${clauseEls.length}: ${LABEL[fav].toLowerCase()}.${ref ? ` ${ref.replace(/^¶ \d+ · /, '')}.` : ''}`;
+  $('#where').textContent = `Clause ${c.dataset.id} of ${clauseEls.length}: ${labelFor(current, fav).toLowerCase()}.${ref ? ` ${ref.replace(/^¶ \d+ · /, '')}.` : ''}`;
 }
 
 function step(delta) {
@@ -796,6 +1019,16 @@ function jumpToNext(fav) {
   for (let k = 1; k <= n; k += 1) {
     const i = (Math.max(activeIndex, -1) + k) % n;
     if (clauseEls[i].dataset.fav === fav) return setActive(i);
+  }
+  return undefined;
+}
+
+function jumpToRule(rule) {
+  const hits = new Set(current.readings.filter((r) => (r.findings || []).some((f) => f.rule === rule)).map((r) => String(r.id)));
+  const n = clauseEls.length;
+  for (let k = 1; k <= n; k += 1) {
+    const i = (Math.max(activeIndex, -1) + k) % n;
+    if (hits.has(clauseEls[i].dataset.id)) return setActive(i);
   }
   return undefined;
 }
@@ -867,7 +1100,7 @@ function boot() {
   renderHistory();
   updatePlan();
   loadExhibits();
-  checkService();
+  service.checked = checkService();
 }
 
 boot();

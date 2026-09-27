@@ -1,9 +1,10 @@
 // End-to-end check of the real Python Worker running locally in workerd
 // (`pywrangler dev`), with no API key and no network:
 //
-//   1. demo mode (no key): status, clause map without readings, exhibits,
-//      input limits, and the page in headless Chrome at desktop and 400 px
-//      phone width;
+//   1. demo mode (no key): the API's status, clause map without readings,
+//      exhibits and input limits; and the page in headless Chrome at desktop
+//      and 400 px phone width, where pasted text is read on the device by
+//      the Python rule set (Pyodide), not sent to the Worker;
 //   2. live mode against a LOCAL MOCK of the Anthropic Messages API: the
 //      official SDK inside the Worker streams its real request from
 //      127.0.0.1, the mock answers with server-sent events (one quote
@@ -198,7 +199,7 @@ async function browserChecks(chrome, base, { live }) {
     await page.navigate(`${base}/`);
     await page.waitFor(`document.querySelectorAll('.exhibit').length === 3 && document.querySelector('#service-status').dataset.state !== 'checking'`);
     const state = await page.evaluate(`document.querySelector('#service-status').dataset.state`);
-    assert.equal(state, live ? 'live' : 'demo', `${plan.name}: service state`);
+    assert.equal(state, live ? 'live' : 'rules', `${plan.name}: service state`);
     if (live) {
       assert.match(await page.evaluate(`document.querySelector('#service-status').textContent`), /Claude Opus 5\.5 at medium effort; if Claude Opus 5\.5 declines a text, another Claude model may answer/);
     }
@@ -225,7 +226,14 @@ async function browserChecks(chrome, base, { live }) {
     const active = await page.evaluate(`({ id: document.querySelector('#doc .cl.active')?.dataset.id, tick: !document.querySelector('#minimap .mm-tick').hidden })`);
     assert.deepEqual(active, { id: '1', tick: true }, `${plan.name}: j j k lands on clause 1, with a tick on the strip`);
 
-    // Paste HTML source: converted in the browser, sent in parts, rendered.
+    // Count requests to the analysis API: with no key there must be none.
+    await page.evaluate(`(() => {
+      const real = window.fetch; window.__analyzeCalls = 0;
+      window.fetch = (url, opts) => { if (String(url).includes('/api/analyze')) window.__analyzeCalls += 1; return real(url, opts); };
+      return true;
+    })()`);
+    // Paste HTML source: converted in the browser, then read (by the model
+    // through the Worker in parts, or on this device by the rule set).
     const html = `<html><body><h1>Test Terms</h1><p>${demo('pacewren').split('\n').filter(Boolean).slice(3, 12).join('</p><p>')}</p><script>window.pwned = 1</script></body></html>`;
     await paste(page, html);
     await page.waitFor(`document.querySelector('#doc-title').textContent === 'Test Terms'`, 60000);
@@ -236,6 +244,7 @@ async function browserChecks(chrome, base, { live }) {
       provenance: document.querySelector('#provenance').textContent,
       verification: document.querySelector('#verification').textContent,
       pwned: window.pwned === 1,
+      analyzeCalls: window.__analyzeCalls,
       sw: document.documentElement.scrollWidth, iw: innerWidth,
     })`);
     assert.equal(pasted.pwned, false, 'pasted HTML must never execute');
@@ -246,8 +255,11 @@ async function browserChecks(chrome, base, { live }) {
       assert.match(pasted.verification, /1 dropped \(1 not in the text word for word\)/);
       assert.match(pasted.provenance, /Claude Opus 5\.5/);
     } else {
-      assert.equal(pasted.marks, 0);
-      assert.match(pasted.notices, /demo mode/i);
+      // No key: read on this device by the rule set, never sent to the Worker.
+      assert.ok(pasted.marks > 0, 'the rule set marks some clauses');
+      assert.match(pasted.provenance, /Rule-based reading, no AI/);
+      assert.match(pasted.notices, /What rules can miss/);
+      assert.equal(pasted.analyzeCalls, 0, 'the pasted text was not sent to the Worker');
     }
 
     // Bad input gets a clear message, and none of it logs a console error.
@@ -344,7 +356,7 @@ async function phases(chrome) {
     log('API: status demo, clause map without readings, 422 on empty text, 400 on an empty body, headings-only answered 200, exhibits served');
     if (chrome) {
       report.demo = await browserChecks(chrome, w.base, { live: false });
-      log('browser: exhibits, j/k with a strip tick, HTML paste, bad input caught with no console errors, 1280 px and 400 px');
+      log('browser: exhibits, j/k with a strip tick, HTML paste read on the device by the rule set, bad input caught with no console errors, 1280 px and 400 px');
     }
     assert.ok(!w.output().includes(MOCK_KEY));
     // A chunked upload larger than the cap is refused while it is read.
