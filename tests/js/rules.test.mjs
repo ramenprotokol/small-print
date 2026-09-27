@@ -46,6 +46,7 @@ test('pasted terms are read on this device by Python, with verified quotes', { s
     const status = await page.evaluate(`document.querySelector('#service-status').textContent`);
     assert.match(status, /Rule-based reading, no AI\./);
     assert.match(status, /never leaves this device/);
+    assert.match(status, /The rules read English only\./);
     assert.ok(status.includes(`${(Number(bytes) / 1e6).toFixed(1)} MB`), 'the first-load size is stated before anything downloads');
     assert.ok(!requests.some((r) => r.includes('pyodide')), 'the runtime is not fetched until a reading is asked for');
 
@@ -79,6 +80,7 @@ test('pasted terms are read on this device by Python, with verified quotes', { s
     for (const q of r.marks) assert.ok(flat.includes(q), `highlight "${q}" is verbatim text`);
     assert.equal(r.notes, r.clauses - r.unmarked, 'one margin note per matched clause');
     assert.match(r.notices, /What rules can miss\./);
+    assert.match(r.notices, /in English only/);
     assert.match(r.checklist, /Forced arbitration/);
     assert.match(r.checklist, /Looked for, not found:/);
     assert.match(r.tally, /No rule matched/);

@@ -69,7 +69,7 @@ The same script runs a spot check the rules were not written alongside: 24 sente
 
 Measured with Pyodide under Node on the build machine (`tests/js/pyodide.test.mjs`, diagnostics only): the Quillfeather test terms (30 clauses) took about 30 ms, a maximum-size 60,000-character document about 190 ms, and a 60,000-character hostile paste of repeated trigger words about 190 ms. Your device may be slower. The same test checks that Pyodide and CPython return identical results, offsets included, for every input.
 
-**What rules can miss.** Rules find set phrases. They miss clauses worded in ways they do not know, can misread words used in another sense, cannot weigh how much a clause matters or how it interacts with the rest, and say nothing about a clause that matches no rule. The page says so next to every rule reading, and "Looked for, not found" says that not finding a phrase is not proof the terms lack it.
+**What rules can miss.** Rules find set phrases, and only in English: text in another language is split into clauses but matches no rule, so it comes back with nothing marked (the page says the rules read English only). They miss clauses worded in ways they do not know, can misread words used in another sense, cannot weigh how much a clause matters or how it interacts with the rest, and say nothing about a clause that matches no rule. The page says so next to every rule reading, and "Looked for, not found" says that not finding a phrase is not proof the terms lack it.
 
 ## The AI reader (optional, needs a key)
 
@@ -123,7 +123,7 @@ Toolchain: Node 20+ (for wrangler, Pyodide and the page tests) and [uv](https://
 ```sh
 npm install           # wrangler and pyodide, both pinned
 npm run build         # -> dist/ (static UI, Pyodide runtime, Python bundle, exhibits, notices), via scripts/build.py
-npm test              # pytest (297 tests) + build + node --test (33 tests, incl. headless Chrome and Pyodide)
+npm test              # pytest (299 tests) + build + node --test (33 tests, incl. headless Chrome and Pyodide)
 npm run test:e2e      # the real Worker in local workerd, demo mode and a mocked model
 npm run dev           # build, apply D1 migrations locally, pywrangler dev on :8787 (demo mode)
 uv run python scripts/compare_rules.py   # rule labels vs the exhibit readings and a spot check
@@ -220,6 +220,7 @@ npm install && npm run build
 
 ## Honest limitations
 
+- **English only.** The rules are English phrases. A French or Japanese terms of service is read without errors but gets no marks at all.
 - **Rules are not understanding.** They find set phrases and can be fooled by unusual wording, by words used in another sense, and by clauses whose meaning depends on the rest of the document. A clause with no mark matched no rule; that does not make it harmless. The comparison above was measured on documents the rules were written alongside, so it flatters them.
 - The labels are judgement calls, whoever makes them. The verifier proves only that a quote is in the text, not that the label is right.
 - The first reading downloads 13.6 MB (uncompressed). On a slow connection that takes a while; the page shows progress and says the size before anything downloads.

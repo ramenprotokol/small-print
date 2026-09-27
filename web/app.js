@@ -160,7 +160,7 @@ function renderServiceStatus() {
     box.dataset.state = 'rules';
     lead.textContent = 'Rule-based reading, no AI.';
     rest.textContent = ` Pasted text is read in this browser by ${formatInt(Number(RUNTIME.rules) || 0)} hand-written rules, `
-      + 'in Python (Pyodide: CPython compiled to WebAssembly). Your text never leaves this device. '
+      + 'in Python (Pyodide: CPython compiled to WebAssembly). The rules read English only. Your text never leaves this device. '
       + (localReader.runtime
         ? `Python ${localReader.runtime.python} is loaded.`
         : `The first reading downloads the Python runtime, ${formatBytes(Number(RUNTIME.bytes))}; after that it normally comes from your browser's cache.`);
@@ -803,7 +803,7 @@ function renderNotices(doc) {
     const caveat = el('p', 'notice caveat');
     caveat.append(
       el('strong', null, 'What rules can miss. '),
-      'The rules look for set phrases. They miss clauses worded in ways they do not know, can misread words used in another sense, '
+      'The rules look for set phrases, in English only: text in another language comes back with nothing marked. They miss clauses worded in ways they do not know, can misread words used in another sense, '
       + 'and cannot weigh how much a clause matters or how it plays with the rest. An unmarked clause matched no rule; that does not make it harmless.',
     );
     notes.push(caveat);
