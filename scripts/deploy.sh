@@ -5,7 +5,7 @@
 #
 #   scripts/deploy.sh setup    # once: D1 database, its migrations, the API key secret
 #   scripts/deploy.sh worker   # the Python Worker (API + the UI as static assets)
-#   scripts/deploy.sh pages    # the static UI on Cloudflare Pages
+#   scripts/deploy.sh pages    # the static site on Cloudflare Pages (the rule reader needs nothing else)
 set -euo pipefail
 GUARD="$HOME/RamenProtocol/_ops/infra/ramen-deploy.sh"
 [ -x "$GUARD" ] || { echo "Guarded deploy script not found; refusing to run." >&2; exit 1; }
@@ -40,7 +40,7 @@ case "${1:-}" in
     ;;
   pages)
     npm run build
-    exec "$GUARD" pages dist --project-name small-print
+    exec "$GUARD" pages dist --project-name small-print --branch main
     ;;
   *)
     echo "usage: scripts/deploy.sh setup|worker|pages" >&2
