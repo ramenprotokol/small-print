@@ -442,7 +442,7 @@ RULES: tuple[Rule, ...] = (
         "no_liability", "Not responsible", "them",
         "They say they will not be responsible for certain losses, even ones their service causes.",
         (
-            r"\b(?:in no event|under no circumstances)\b" + G(100) + r"\b(?:be )?(?:liable|responsible)\b",
+            r"\b(?:in no event|under no circumstances)\b" + G(100) + r"\b(?:be )?(?:liable|responsible)\b" + TAIL,
             rf"\b{THEY}\b" + G(30)
             + r"\b(?:(?:are|is|will|shall|can|do|does) not|won't|isn't|aren't|cannot|can't|never)\s+(?:be\s+|accept\s+|take\s+)?"
             r"(?:held\s+)?(?:liable|responsible|liability|responsibility)\b" + TAIL,
@@ -819,7 +819,12 @@ def _long_enough(quote: str) -> bool:
 
 
 # Words a quote should neither end on nor grow by first when it is widened.
-_FUNCTION_WORDS = frozenset("a an and or the to of in on at by for with as that is are be".split())
+_FUNCTION_WORDS = frozenset(
+    "a an and or but nor the to of in on at by for from with as that which who than is are be "
+    "into onto about under over per via any all each its their your our this these those if when where".split()
+)
+# A quote that stops this close to the end of its clause runs on to the end.
+_RUN_ON = 25
 _END_JUNK = ",;:-(“‘"
 
 
@@ -856,10 +861,15 @@ def _tidy(body: str, s: int, e: int) -> tuple[int, int]:
             prev = body.rfind(" ", 0, max(s - 1, 0))
             s = 0 if prev == -1 else prev + 1
         e = _trim_end(body, s, e)
+    rest = body[e:].rstrip(" .;:!?\"'”’)")
+    if 0 < len(rest) <= _RUN_ON and not any(c in rest for c in ".,;!?\n"):
+        e = _trim_end(body, s, e + len(rest))  # "... arising from your notes", not "... arising from"
     words = body[s:e].split()
-    while words and words[-1].lower() in _FUNCTION_WORDS and e < n:
-        nxt = body.find(" ", e + 1)
-        e = _trim_end(body, s, n if nxt == -1 else nxt)
+    while len(words) > 1 and words[-1].lower().strip(",;:") in _FUNCTION_WORDS:
+        cut = body.rfind(" ", s, e)
+        if cut <= s or not _long_enough(body[s:cut].rstrip()):
+            break
+        e = _trim_end(body, s, cut)  # never end on "from", "the", "and"...
         words = body[s:e].split()
     return s, e
 

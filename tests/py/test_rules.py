@@ -3,7 +3,10 @@
 Every sentence here is written for these tests (no real company's terms).
 """
 
+import importlib.util
 import json
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -322,3 +325,17 @@ def test_a_maximum_size_ordinary_document_reads_quickly_on_cpython():
     elapsed = time.perf_counter() - t0
     assert len(out["analysis"]["readings"]) > 300
     assert elapsed < 2.0, f"{elapsed:.2f} s"
+
+
+def test_the_browser_bundle_holds_exactly_what_local_imports_and_never_the_model_code():
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location("build", root / "scripts" / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    code = (
+        "import sys; sys.path.insert(0, 'src'); import small_print.local; "
+        "print(sorted(m for m in sys.modules if m.startswith('small_print')), 'anthropic' in sys.modules)"
+    )
+    out = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, check=True).stdout
+    loaded = sorted(f"small_print.{n[:-3]}" for n in build.BROWSER_MODULES if n != "__init__.py") + ["small_print"]
+    assert out.strip() == f"{sorted(loaded)} False"
