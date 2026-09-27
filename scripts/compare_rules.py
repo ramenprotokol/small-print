@@ -1,11 +1,13 @@
-"""Compare the rule reader's labels with the hand-written exhibit readings.
+"""Compare the rule reader's labels with labels decided by a person.
 
     uv run python scripts/compare_rules.py
 
-The three exhibits carry a hand-written label for every clause. This prints,
-for each hand-written label, what the rules said. It is a sanity check, not
-an accuracy benchmark: the rules were written with these exhibits in view,
-so real terms will do worse.
+1. The three exhibits carry a hand-written label for every clause. This
+   prints, for each hand-written label, what the rules said. It is a sanity
+   check, not an accuracy benchmark: the rules were written with these
+   exhibits in view, so real terms will do worse.
+2. tests/fixtures/spot-check.json holds sentences written after the rules,
+   each with the label decided before the rules read it (see its "about").
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from small_print.normalise import normalise  # noqa: E402
-from small_print.rules import read  # noqa: E402
+from small_print.rules import find, read  # noqa: E402
 from small_print.segment import clauses, segment  # noqa: E402
 
 LABELS = ("them", "you", "neutral", "unclear")
@@ -44,6 +46,21 @@ def main() -> None:
     same = sum(table[(h, h)] for h in LABELS)
     print(f"\n{total} clauses; the rules gave the hand-written label to {same}, another label to "
           f"{sum(v for (h, c), v in table.items() if c not in (h, 'none'))}, and no label to {sum(table[(h, 'none')] for h in LABELS)}.")
+
+    spot = json.loads((ROOT / "tests" / "fixtures" / "spot-check.json").read_text(encoding="utf-8"))
+    text = normalise(spot["preamble"] + "\n" + "\n".join(x["text"] for x in spot["sentences"]))
+    segs = segment(text)
+    found = find(text, segs)
+    tally = Counter()
+    print("\nSpot check (tests/fixtures/spot-check.json):")
+    for x, seg in zip(spot["sentences"], clauses(segs)[1:]):
+        best = found.get(seg.id, [])
+        got = best[0].rule.favours if best else "none"
+        kind = "same" if got == x["expected"] else "none" if got == "none" else "different"
+        tally[kind] += 1
+        print(f"  {kind:<9} expected {x['expected']:<7} rules {got:<7} {x['text']}")
+    print(f"{len(spot['sentences'])} sentences: the expected label for {tally['same']}, no label for {tally['none']}, "
+          f"a different label for {tally['different']}.")
 
 
 if __name__ == "__main__":

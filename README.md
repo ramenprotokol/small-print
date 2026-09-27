@@ -17,7 +17,7 @@ The page labels this honestly as **"Rule-based reading, no AI"** and says what r
 
 ## Two readers
 
-- **Rules, on your device (this site).** A fixed library of 51 hand-written rules in Python, run in the browser by [Pyodide](https://pyodide.org/) (CPython compiled to WebAssembly). Free, no API key, no server, nothing uploaded.
+- **Rules, on your device (this site).** A fixed library of 53 hand-written rules in Python, run in the browser by [Pyodide](https://pyodide.org/) (CPython compiled to WebAssembly). Free, no API key, no server, nothing uploaded.
 - **Claude, through a Python Worker (optional).** The repository also holds a Python Worker that sends the text to Claude Opus 5.5 and verifies its quotes. It runs only when whoever deploys it sets their own `ANTHROPIC_API_KEY`; the public site has no key, so it does not use it. When a Worker with a key answers `/api/status`, the same page switches to it. See [The AI reader](#the-ai-reader-optional-needs-a-key).
 
 The three exhibits are fictional companies (Nimbus Locker, Pacewren, Brothbike) with terms written for this repo. Their readings (128 of them) were written by hand in the exact JSON shape the model returns, and at build time they pass through the same Python verifier (`scripts/build.py` fails if any quote does not verify).
@@ -26,7 +26,7 @@ The three exhibits are fictional companies (Nimbus Locker, Pacewren, Brothbike) 
 
 The core of the job is text work: normalising pasted text, splitting it into clauses without breaking on "e.g.", "Inc." or "Section 4.2", matching legal phrasing, and checking every quote against the source. Python is good at that, and the same Python runs in two places: in the visitor's browser (Pyodide in a Web Worker) and in a Cloudflare Python Worker (Pyodide on workerd). On the live site, Python does all of the reading:
 
-- `src/small_print/rules.py`: the rule reader. 51 rules, 126 bounded regular expressions, plus the checks that keep near misses out (below).
+- `src/small_print/rules.py`: the rule reader. 53 rules, 136 bounded regular expressions, plus the checks that keep near misses out (below).
 - `src/small_print/local.py`: the browser's entry point. It returns the `/api/analyze` response shape with `analysis.source = "rules"`, so the page renders a rule reading exactly like a model reading.
 - `src/small_print/normalise.py`: canonical text and the SHA-256 fingerprint.
 - `src/small_print/segment.py`: the clause segmenter. It handles headings, abbreviations, list numbers, inline "(a) … ; (b) …" lists, and short and very long sentences.
@@ -36,7 +36,7 @@ The Worker adds `service.py` (the HTTP handlers), `budget.py` (the daily budget 
 
 ## The rule reader
 
-**What it looks for.** Forced arbitration, class-action and jury-trial waivers, short deadlines to claim, their choice of court, changes to the terms (and acceptance by carrying on), account closure and service changes at their discretion, removal of your content, assignment, auto-renewal, price rises, no refunds, extra charges, expiring credit, liability caps and exclusions, "as is" disclaimers, indemnity, licences over your content (and licences that outlive your account), selling and sharing personal data, AI training on your content, tracking and targeted ads, marketing consent, governing law and age limits. It also looks for the clauses that protect you: opt-outs, refunds, advance notice, your own courts, ownership of your content, data export and deletion, promises not to sell data, rights the law keeps, and warranties. Each rule says who its kind of clause favours and carries a one-line plain reading.
+**What it looks for.** Forced arbitration, class-action and jury-trial waivers, giving up claims, short deadlines to claim, their choice of court, changes to the terms (and acceptance by carrying on), account closure and service changes at their discretion, removal of your content, assignment, auto-renewal, price rises, no refunds, extra charges, expiring credit, liability caps and exclusions, "as is" disclaimers, indemnity, licences over your content (and licences that outlive your account), selling and sharing personal data, AI training on your content, tracking and targeted ads, marketing consent, governing law and age limits. It also looks for the clauses that protect you: opt-outs, refunds, advance notice, your own courts, ownership of your content, data export and deletion, promises not to sell your data or train AI on it, rights the law keeps, and warranties. Each rule says who its kind of clause favours and carries a one-line plain reading.
 
 **How a rule decides.** Each rule is a list of patterns tried against every clause. The gaps between words are lazy and capped (`[^.;!?\n]{0,N}?`), so a pattern never runs past a sentence end or into the next clause, and the work per clause is bounded. On top of the patterns:
 
@@ -48,7 +48,7 @@ The Worker adds `service.py` (the HTTP handlers), `budget.py` (the daily budget 
 
 A clause keeps up to four findings. The strongest one (then the most important rule) is its label; the others appear as "Also:" with their own highlighted quotes.
 
-**Tests.** `tests/py/test_rules.py` has a true positive for every one of the 51 rules (a test enforces it), 29 near misses (negations, the reader as subject, carve-outs, "at least 3 years" that is not an age limit), quote checks over every exhibit and a synthetic terms document, and bounds on a maximum-size hostile paste. Every sentence in those tests was written for them; no real company's terms are used anywhere.
+**Tests.** `tests/py/test_rules.py` has a true positive for every one of the 53 rules (a test enforces it), 32 near misses (negations, the reader as subject, carve-outs, "at least 3 years" that is not an age limit), quote checks over every exhibit and a synthetic terms document, and bounds on a maximum-size hostile paste. Every sentence in those tests was written for them; no real company's terms are used anywhere.
 
 **How it compares with the hand-written exhibit readings.** `uv run python scripts/compare_rules.py` prints this (measured on the build machine):
 
@@ -60,6 +60,8 @@ A clause keeps up to four findings. The strongest one (then the most important r
 | unclear | 2 | 0 | 1 | 1 | 3 | 7 |
 
 Of 128 clauses, the rules gave the hand-written label to 65, a different label to 9 and no label to 54 (mostly neutral clauses, which the rules mostly leave alone on purpose). This is a sanity check, not a benchmark: the rules were written with these exhibits in view, so real terms will do worse.
+
+The same script runs a spot check the rules were not written alongside: 24 sentences for a fictional photo-printing service (`tests/fixtures/spot-check.json`), each with its expected label decided before the rules read it. The first run gave the expected label to 11, no label to 12, and a wrong label to 1: "We may raise storage prices with 60 days' notice" came out as favouring you, because the advance-notice rule outranked the clause it softens. That ranking flaw was fixed, so the script now reports 12 expected, 12 with no label and 0 wrong. No phrasing was tuned on these sentences. The honest summary: when a rule fires, its label is usually right, but on text it has not seen it stays silent on about half of the clauses that matter.
 
 **Where it runs.** `scripts/build.py` copies the Pyodide runtime (npm `pyodide` 314.0.7, which is CPython 3.14.2) unmodified into `dist/assets/pyodide-<hash>/`, and zips the six Python modules into `dist/assets/small_print.<hash>.zip`. The page starts a module Web Worker (`web/rules-worker.js`) only when you ask for a reading. The worker counts the bytes as they arrive for the progress bar, then calls `local.analyze_json`. The page stops a worker whose download makes no progress for 60 s, or whose reading takes more than 20 s, so a hostile paste cannot hang the tab; the next reading starts a fresh one. The provenance line shows the Python and Pyodide versions and the time each reading took, measured in Python on your device.
 
@@ -119,10 +121,10 @@ Toolchain: Node 20+ (for wrangler, Pyodide and the page tests) and [uv](https://
 ```sh
 npm install           # wrangler and pyodide, both pinned
 npm run build         # -> dist/ (static UI, Pyodide runtime, Python bundle, exhibits, notices), via scripts/build.py
-npm test              # pytest (282 tests) + build + node --test (31 tests, incl. headless Chrome and Pyodide)
+npm test              # pytest (296 tests) + build + node --test (31 tests, incl. headless Chrome and Pyodide)
 npm run test:e2e      # the real Worker in local workerd, demo mode and a mocked model
 npm run dev           # build, apply D1 migrations locally, pywrangler dev on :8787 (demo mode)
-uv run python scripts/compare_rules.py   # rule labels vs the hand-written exhibit readings
+uv run python scripts/compare_rules.py   # rule labels vs the exhibit readings and a spot check
 ```
 
 `npm test` includes:

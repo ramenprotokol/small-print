@@ -1,0 +1,102 @@
+{
+ "about": "Sentences for a fictional photo-printing service, written after the rules existed, with the expected label decided before the rules read them. First run: 11 expected, 12 no label, 1 different ('We may raise storage prices with 60 days' notice' came out as favouring you). That exposed a ranking flaw, advance notice outranking the clause it softens, which was fixed; no phrasing was tuned on these sentences. Synthetic; no real company's terms.",
+ "preamble": "Tidemark Photo Ltd. (\"Tidemark\", \"we\") runs a photo printing service.",
+ "sentences": [
+  {
+   "text": "We may cancel any print order at our discretion.",
+   "expected": "them"
+  },
+  {
+   "text": "Tidemark will not be liable for colour differences between your screen and the print.",
+   "expected": "them"
+  },
+  {
+   "text": "You keep the copyright in every photo you upload.",
+   "expected": "you"
+  },
+  {
+   "text": "By uploading, you allow Tidemark to use your photos in its advertising without payment.",
+   "expected": "them"
+  },
+  {
+   "text": "Prints damaged in transit will be replaced free of charge.",
+   "expected": "you"
+  },
+  {
+   "text": "Storage plans renew each year automatically.",
+   "expected": "them"
+  },
+  {
+   "text": "We may raise storage prices with 60 days' notice.",
+   "expected": "them"
+  },
+  {
+   "text": "Uploaded photos may be scanned to detect illegal content.",
+   "expected": "neutral"
+  },
+  {
+   "text": "You must be at least 18 years old to order prints.",
+   "expected": "neutral"
+  },
+  {
+   "text": "We will not share your photos with anyone except the print lab that makes your order.",
+   "expected": "you"
+  },
+  {
+   "text": "These Terms may be updated by Tidemark from time to time.",
+   "expected": "them"
+  },
+  {
+   "text": "All claims must be brought in the courts of Examplia.",
+   "expected": "them"
+  },
+  {
+   "text": "You may close your account whenever you like and download your photos first.",
+   "expected": "you"
+  },
+  {
+   "text": "We collect device identifiers and use them for analytics and advertising.",
+   "expected": "them"
+  },
+  {
+   "text": "Orders cannot be cancelled once printing has started.",
+   "expected": "them"
+  },
+  {
+   "text": "Any dispute will be settled by arbitration in Examplia City.",
+   "expected": "them"
+  },
+  {
+   "text": "You will compensate Tidemark for any costs it incurs because of photos you had no right to upload.",
+   "expected": "them"
+  },
+  {
+   "text": "Tidemark makes no guarantee that the service will be available at all times.",
+   "expected": "them"
+  },
+  {
+   "text": "Our liability to you will never exceed the price of the order.",
+   "expected": "them"
+  },
+  {
+   "text": "We do not use your photos to train any machine-learning model.",
+   "expected": "you"
+  },
+  {
+   "text": "If we change these Terms in a way that hurts you, we will email you 30 days in advance.",
+   "expected": "you"
+  },
+  {
+   "text": "Unused credit expires after 12 months.",
+   "expected": "them"
+  },
+  {
+   "text": "We may delete photos from free accounts after 90 days of inactivity.",
+   "expected": "them"
+  },
+  {
+   "text": "Nothing in these Terms removes rights you have under consumer law.",
+   "expected": "you"
+  }
+ ]
+}
