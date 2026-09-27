@@ -64,7 +64,6 @@ _LIST_ITEM = re.compile(
     r";(?=\s+(?:(?:and|or)\s+)?\((?:[a-z]|[ivx]{1,4}|\d{1,2})\)\s)"
 )
 _SEMICOLON = re.compile(r";(?=\s)")
-_TOKEN_BEFORE = re.compile(r"(\S+)$")
 _LIST_NUMBER = re.compile(r"^\(?(?:\d+(?:\.\d+)*|[ivxlc]+|[a-z])[.)]?$", re.IGNORECASE)
 _NUMBERING = re.compile(
     r"^(?:#+\s*)?(?:(?:section|article|part|clause|schedule)\s+)?"
@@ -127,11 +126,21 @@ def _is_title_fragment(fragment: str) -> bool:
     return True
 
 
+def _token_before(line: str, dot: int) -> str:
+    """The run of non-space characters that ends at ``dot``. Scanning back
+    costs the token's length; searching the whole line up to ``dot`` made a
+    long single-line paste quadratic in its number of full stops."""
+    start = dot
+    while start > 0 and not line[start - 1].isspace():
+        start -= 1
+    return line[start : dot + 1]
+
+
 def _is_abbreviation(line: str, dot: int, line_start_token: bool) -> bool:
-    m = _TOKEN_BEFORE.search(line[: dot + 1])
-    if not m:
+    raw = _token_before(line, dot)
+    if not raw:
         return False
-    token = m.group(1).lstrip("(\"'“‘[").rstrip(".").lower()
+    token = raw.lstrip("(\"'“‘[").rstrip(".").lower()
     if token in _ABBREVIATIONS:
         return True
     if re.fullmatch(r"[a-z]", token):  # an initial: "J. Smith"
@@ -139,7 +148,7 @@ def _is_abbreviation(line: str, dot: int, line_start_token: bool) -> bool:
     if re.fullmatch(r"(?:[a-z]\.)+[a-z]", token):  # "u.s.a"
         return True
     # A leading list number: "4. You may..." is one clause, not "4." + rest.
-    if line_start_token and _LIST_NUMBER.match(m.group(1)):
+    if line_start_token and _LIST_NUMBER.match(raw):
         return True
     return False
 

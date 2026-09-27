@@ -1,3 +1,5 @@
+import time
+
 from small_print.normalise import normalise
 from small_print.segment import MAX_CLAUSE, clauses, is_heading, segment
 
@@ -165,3 +167,19 @@ def test_lettered_and_roman_list_lines_stay_separate_clauses():
     assert [x[2] for x in texts(t)] == [
         "You agree not to:", "a. copy the service", "b. resell it", "Restrictions", "i. you may not lease it",
     ]
+
+
+def test_a_maximum_size_document_on_one_line_segments_quickly():
+    """Text copied from some PDFs and web pages arrives with no line breaks.
+    Finding the word before each full stop must not rescan the line up to
+    that point: that made a 60,000-character single line take seconds (and
+    longer in the browser's Pyodide), with more full stops costing more."""
+    ordinary = " ".join(normalise(demo_text("nimbus-locker")).split())
+    dense = "See e.g. Section 4.2 of Nimbus Inc. Ltd. and its affiliates. "
+    for unit in (ordinary + " ", dense):
+        line = (unit * (60_000 // len(unit) + 1))[:60_000]
+        t0 = time.perf_counter()
+        found = clauses(segment(line))
+        elapsed = time.perf_counter() - t0
+        assert len(found) > 50
+        assert elapsed < 0.5, f"{elapsed:.2f} s"
