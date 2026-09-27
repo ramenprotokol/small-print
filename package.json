@@ -17,6 +17,7 @@
     "dev": "npm run build && wrangler d1 migrations apply small-print-cache --local && uv run pywrangler dev"
   },
   "devDependencies": {
+    "pyodide": "314.0.7",
     "wrangler": "4.141.0"
   }
 }
