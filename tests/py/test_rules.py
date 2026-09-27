@@ -348,6 +348,24 @@ def test_a_maximum_size_hostile_document_stays_bounded():
     assert elapsed < 5.0, f"{elapsed:.2f} s"
 
 
+@pytest.mark.parametrize(
+    "chunk",
+    [
+        "we will not change these terms at any time ",  # every match is negated, so none is kept
+        "you may terminate this agreement at any time for any reason ",  # every match has "you" as subject
+    ],
+)
+def test_rejected_matches_in_one_long_clause_stay_linear(chunk):
+    """Checking the words before a match must not rescan the clause from its
+    start: with thousands of rejected matches in one 60,000-character clause
+    that took about a second on CPython, and more in the browser."""
+    raw = (chunk * (service.MAX_CHARS // len(chunk)))[: service.MAX_CHARS]
+    t0 = time.perf_counter()
+    local.analyze(raw)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 0.4, f"{elapsed:.2f} s"
+
+
 def test_a_maximum_size_ordinary_document_reads_quickly_on_cpython():
     base = normalise(demo_text("nimbus-locker"))
     text = ""

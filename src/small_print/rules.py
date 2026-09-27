@@ -827,6 +827,14 @@ _INNER_NEGATORS = {"not", "never", "cannot"}
 _WORD = re.compile(r"[a-z’']+", re.IGNORECASE)
 _PART_BREAK = re.compile(r"[.;:!?,]")
 _YOU_BEFORE = re.compile(r"\byou\s+(?:[a-z]+\s+){0,2}$", re.IGNORECASE)
+# What is left of a _YOU_BEFORE match when its start is cut off: letters and
+# spaces, with at most two whole words after the cut.
+_YOU_BEFORE_TAIL = re.compile(r"[a-z]*\s*(?:[a-z]+\s+){0,2}", re.IGNORECASE)
+
+# Both checks look only at the text just before a match. They start with this
+# much of it and take four times more while the answer could still change, so
+# thousands of matches in one long clause don't each rescan it from the start.
+_LOOK_BACK = 128
 
 
 def _is_negation(word: str) -> bool:
@@ -837,12 +845,34 @@ def _is_negation(word: str) -> bool:
 def _negated_before(body: str, at: int) -> bool:
     """A negation among the last five words before ``at``, within the same
     part of the sentence (the window stops at a comma or colon)."""
-    window = body[:at]
-    breaks = list(_PART_BREAK.finditer(window))
-    if breaks:
-        window = window[breaks[-1].end() :]
-    words = _WORD.findall(window)[-5:]
-    return any(_is_negation(w) for w in words)
+    size = _LOOK_BACK
+    while True:
+        lo = max(0, at - size)
+        window = body[lo:at]
+        breaks = list(_PART_BREAK.finditer(window))
+        if breaks:
+            window = window[breaks[-1].end() :]
+        words = _WORD.findall(window)
+        # The last five words are those of the whole of body[:at] once the
+        # window reaches the start or a part break, or holds a sixth word (so
+        # a word cut short at its left edge is not one of them).
+        if lo == 0 or breaks or len(words) > 5:
+            return any(_is_negation(w) for w in words[-5:])
+        size *= 4
+
+
+def _you_before(body: str, at: int) -> bool:
+    """``_YOU_BEFORE`` on ``body[:at]``: the reader is the subject."""
+    size = _LOOK_BACK
+    while True:
+        lo = max(0, at - size)
+        # pos and endpos, not a slice: \b still sees the character before lo.
+        if _YOU_BEFORE.search(body, lo, at):
+            return True
+        # A match starting before lo would span all of body[lo:at].
+        if lo == 0 or not _YOU_BEFORE_TAIL.fullmatch(body, lo, at):
+            return False
+        size *= 4
 
 
 def _negated_inside(quote: str) -> bool:
@@ -962,7 +992,7 @@ def find(text: str, segments: list[Segment]) -> dict[int, list[Finding]]:
                 tail = m.start("tail") if "tail" in rx.groupindex and m.group("tail") else m.end()
                 if rule.negatable and (_negated_before(body, s) or _negated_inside(text[m.start() : tail])):
                     continue
-                if rule.not_you and _YOU_BEFORE.search(body[:s]):
+                if rule.not_you and _you_before(body, s):
                     continue
                 level = conf
                 if level == "medium" and c.strong is not None and c.strong.search(body):
