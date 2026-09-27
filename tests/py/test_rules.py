@@ -121,6 +121,17 @@ POSITIVES = [
     ("We share your email address with service providers who send our emails.", "data_processors"),
     ("We may publish aggregated statistics about how notes are used.", "deidentified"),
     ("You agree to receive promotional emails from Quillfeather.", "marketing_consent"),
+    ("You release Quillfeather from all claims arising from shared notebooks.", "release"),
+    ("We will never share your notes to train artificial intelligence models.", "no_ai_training"),
+    ("Any action must be commenced within one (1) year after it arises.", "time_limit"),
+    ("Disputes shall be resolved exclusively by the courts of Examplia City.", "venue"),
+    ("These Terms are governed by Examplian law.", "governing_law"),
+    ("Gift cards cannot be refunded.", "no_refunds"),
+    ("Your statutory rights are not affected by these terms.", "rights_kept"),
+    ("Coins have no cash value and are forfeited when your account closes.", "expiring_credit"),
+    ("Your sole remedy is to stop using the App.", "no_liability"),
+    ("We may share information about you with our advertising partners.", "data_sharing"),
+    ("We use your reading history to personalise offers in the App.", "tracking"),
 ]
 
 
@@ -165,6 +176,9 @@ NEAR_MISSES = [
     ("You can delete your notes at any time.", "you_cancel"),
     ("We will not refund partial months.", "refund_right"),
     ("If you do not pay, we may remind you by email.", "termination"),
+    ("We will never use your chat messages to train artificial intelligence models.", "ai_training"),
+    ("We do not sell your notes, but we use them to train our models.", "no_ai_training"),
+    ("You do not waive any claims you have under consumer law.", "release"),
 ]
 
 

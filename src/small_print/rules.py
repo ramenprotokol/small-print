@@ -66,7 +66,7 @@ TAIL = r"(?P<tail>(?:[^.;,!?\n]|\.(?=\S)){0,60})"
 THEY = "{THEY}"  # replaced per document by "we", "us", "the company" and the company's names
 DATA = (
     r"(?:personal (?:data|information|details)|(?:your|user|customer|health|location|usage) "
-    r"(?:data|information|details)|your (?:name|email|contacts|location|activity))"
+    r"(?:data|information|details)|your (?:name|email|contacts|location|activity)|(?:data|information) about you)"
 )
 PARTIES = (
     r"(?:(?:business |commercial |advertising |marketing )?partners?|advertis\w*|third[- ]part(?:y|ies)|"
@@ -76,7 +76,7 @@ AT_WILL = (
     r"(?:at any time|for any (?:or no )?reason|for no reason|without (?:prior |advance )?(?:notice|cause|reason|"
     r"warning|explanation|liability)|with or without (?:notice|cause)|in (?:our|its) (?:sole|absolute) discretion)"
 )
-NUMBER = r"(?:\d+|one|two|three|seven|ten|fourteen|thirty|sixty|ninety)"
+NUMBER = r"(?:\d+|one|two|three|six|seven|ten|twelve|fourteen|thirty|sixty|ninety)(?: \(\d+\))?"
 
 
 @dataclass(frozen=True)
@@ -155,6 +155,17 @@ RULES: tuple[Rule, ...] = (
         weight=85,
     ),
     Rule(
+        "release", "You give up claims", "them",
+        "You agree to give up claims you might otherwise bring against them.",
+        (
+            r"\b(?:waive|waives|release|releases|give up|relinquish|discharge)\b" + G(40)
+            + r"\b(?:any|all|every) (?:claims?|rights? to (?:sue|claim|recover)|causes? of action|demands)\b" + TAIL,
+            rf"\brelease\w* (?:us|{THEY})\b" + G(30) + r"\bfrom\b" + G(20) + r"\b(?:any|all) (?:claims?|liability|demands)\b" + TAIL,
+        ),
+        confidence="high",
+        weight=70,
+    ),
+    Rule(
         "arbitration_opt_out", "Arbitration opt-out", "you",
         "You can opt out of arbitration, if you do it in time, and keep your right to go to court.",
         (
@@ -184,6 +195,7 @@ RULES: tuple[Rule, ...] = (
             r"(?<!non-)(?<!non )\b(?:exclusive|sole) (?:jurisdiction|venue)\b" + G(100) + r"\bcourts?\b" + TAIL,
             r"\bcourts?\b" + G(60) + r"\b(?:will|shall) have (?:exclusive |sole )?jurisdiction\b",
             r"\b(?:submit|consent|agree)\b" + G(20) + r"\bto the (?:exclusive |personal |sole )+jurisdiction\b" + TAIL,
+            r"\b(?:resolved|heard|decided|brought|litigated)\b" + G(20) + r"\b(?:exclusively|only|solely) (?:by|in|before) the courts?\b" + TAIL,
         ),
         negatable=False,
         weight=45,
@@ -220,6 +232,7 @@ RULES: tuple[Rule, ...] = (
         "Says which country's or state's law applies to these terms.",
         (
             r"\bgoverned by\b" + G(40) + r"\blaws? of\b[^.;,\n]{1,60}",
+            r"\bgoverned by\b[^.;,\n]{1,40}\blaws?\b",
             r"\blaws? of\b[^.;,\n]{1,50}\b(?:govern|governs|apply|applies|will apply|shall apply)\b",
         ),
         confidence="high",
@@ -274,7 +287,9 @@ RULES: tuple[Rule, ...] = (
             rf"\b(?:at least )?{NUMBER} (?:days|weeks|months)(?:'|’)? (?:prior |advance )?(?:written )?notice\b",
             r"\b(?:notify|tell|inform|email|warn) you\b" + G(30) + r"\b(?:before|in advance|beforehand)\b",
         ),
-        confidence="high",
+        # Notice usually softens a clause that favours them ("we may raise
+        # prices with 60 days' notice"), so it never outranks that clause.
+        confidence="medium",
         weight=35,
     ),
     Rule(
@@ -282,7 +297,7 @@ RULES: tuple[Rule, ...] = (
         "They can suspend or close your account whenever they decide to.",
         (
             rf"\b{THEY}\b" + G(30) + r"\b(?:may|can|reserves? the right to|(?:is|are) entitled to)\b" + G(30)
-            + r"\b(?:suspend|terminate|close|disable|deactivate|ban|block|end|cancel|restrict|delete)\b" + G(80)
+            + r"\b(?:suspend|terminate|close|disable|deactivate|ban|block|end|cancel|restrict|delete|refuse (?:service|access))\b" + G(80)
             + rf"\b{AT_WILL}",
             r"\b(?:suspend|terminate|close|disable|deactivate)\w*\b" + G(60)
             + r"\b(?:in (?:our|its) (?:sole|absolute) discretion|for any (?:or no )?reason|without (?:prior )?(?:notice|cause|reason))",
@@ -384,6 +399,8 @@ RULES: tuple[Rule, ...] = (
             r"\bno refunds?\b" + TAIL,
             r"\brefunds?\b" + G(20) + r"\b(?:is|are|will|shall)\s+not\s+(?:be\s+)?(?:given|available|provided|issued|offered|made|due)\b",
             r"\b(?:do not|don't|will not|won't) (?:offer|give|provide|issue) refunds?\b",
+            r"\b(?:cannot|can't|can not|will not|won't|shall not|are not|is not) be refunded\b",
+            r"\b(?:is|are) not refundable\b",
             (r"\brefunds?\b" + G(40) + r"\b(?:at|in) (?:our|its) (?:sole |absolute )?discretion\b", "medium"),
         ),
         confidence="high",
@@ -405,8 +422,9 @@ RULES: tuple[Rule, ...] = (
         "expiring_credit", "Credit that expires", "them",
         "Credit, points or balances they give you can expire or cannot be cashed out.",
         (
-            r"\b(?:credits?|balances?|points|vouchers?|gift cards?)\b" + G(40)
-            + r"\b(?:expires?|expire after|lapses?|cannot be (?:exchanged|redeemed|converted) for cash|non-transferable)\b" + TAIL,
+            r"\b(?:credits?|balances?|points|vouchers?|gift cards?|virtual (?:currency|items|goods)|coins|tokens)\b" + G(40)
+            + r"\b(?:expires?|expire after|lapses?|forfeit\w*|(?:has|have) no (?:cash|monetary|real-world) value|"
+            r"cannot be (?:exchanged|redeemed|converted) for cash|non-transferable)\b" + TAIL,
         ),
         negatable=False,
         weight=40,
@@ -448,6 +466,7 @@ RULES: tuple[Rule, ...] = (
             r"(?:held\s+)?(?:liable|responsible|liability|responsibility)\b" + TAIL,
             r"\bnot (?:be )?(?:liable|responsible) for (?:any )?(?:indirect|incidental|special|consequential|punitive|exemplary|lost|loss)\w*" + TAIL,
             r"\b(?:disclaim|exclude)s?\b" + G(30) + r"\b(?:all |any )?liability\b",
+            r"\b(?:your )?(?:sole|exclusive|only) (?:and exclusive )?remedy\b" + TAIL,
         ),
         strong=r"\bindirect\b|\bconsequential\b|\bincidental\b|\bpunitive\b|\bany (?:loss|damage|injury)\b|\blost profits\b|\bloss of (?:data|profits?|revenue)\b",
         negatable=False,
@@ -497,6 +516,7 @@ RULES: tuple[Rule, ...] = (
             r"\b(?:does|do|will|shall) not (?:affect|limit|exclude|restrict|reduce)\b" + G(40)
             + r"\byour (?:statutory |legal |consumer |mandatory )?rights\b",
             r"\b(?:in addition to|without prejudice to)\b" + G(30) + r"\b(?:any )?(?:statutory |legal |consumer )?rights you (?:have|may have)\b",
+            r"\byour (?:statutory |legal |consumer |mandatory )?rights\b" + G(20) + r"\b(?:are|is|remain) (?:not affected|unaffected)\b",
         ),
         confidence="high",
         negatable=False,
@@ -638,6 +658,21 @@ RULES: tuple[Rule, ...] = (
             + r"\b(?:models?|AI|artificial intelligence|machine[- ]learning|algorithms?|automated (?:features|systems|tools))\b",
             r"\b(?:train|training)\b" + G(40) + r"\b(?:machine[- ]learning|artificial intelligence|AI|language) models?\b",
         ),
+        # "We will never use your messages to train AI models": the negation
+        # sits further back than the usual window.
+        unless=r"\b(?:never|not|won't|don't|doesn't)\s+(?:\w+\s+){0,2}(?:use|share|allow|permit)\b" + G(60) + r"\btrain",
+        weight=70,
+    ),
+    Rule(
+        "no_ai_training", "No AI training on your content", "you",
+        "They promise not to use your content or data to train AI models.",
+        (
+            r"\b(?:never|not|won't|don't|doesn't)\s+(?:\w+\s+){0,2}(?:use|share|allow|permit)\b" + G(60)
+            + r"\btrain\w*\b" + G(40)
+            + r"\b(?:models?|AI|artificial intelligence|machine[- ]learning|algorithms?)\b",
+        ),
+        confidence="high",
+        negatable=False,
         weight=70,
     ),
     Rule(
@@ -651,6 +686,9 @@ RULES: tuple[Rule, ...] = (
             + r"\b(?:to (?:show|send|serve|target|personali[sz]e)|for)\b" + G(20)
             + r"\b(?:ads|advertising|advertisements|adverts|marketing|recommendations)\b",
             r"\btrack\w*\b" + G(40) + r"\bacross (?:other )?(?:sites|websites|apps|services)\b",
+            r"\b(?:use|uses|analy[sz]e)\b" + G(40) + r"\b(?:data|history|activity|behaviou?r|purchases|usage)\b" + G(40)
+            + r"\bto (?:show|send|serve|target|personali[sz]e|tailor)\b" + G(30)
+            + r"\b(?:ads|advertising|advertisements|adverts|marketing|offers|promotions)\b" + TAIL,
         ),
         weight=50,
     ),
