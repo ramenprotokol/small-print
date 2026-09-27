@@ -2,6 +2,8 @@
 
 Paste a Terms of Service; get a clause-by-clause map of who each clause favours, with the exact quote.
 
+**Live:** https://small-print.pages.dev
+
 ![A synthetic terms of service read by the rule set: clauses washed pink or green, the matched words highlighted, and margin notes naming each rule ("They can close your account", "Liability cap", "You cover their costs") with who it favours](docs/screenshot.png)
 
 ## The 30-second experience
