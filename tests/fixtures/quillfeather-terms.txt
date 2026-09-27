@@ -1,0 +1,48 @@
+QUILLFEATHER NOTES: TERMS OF SERVICE
+Effective 1 May 2026. This is a synthetic document written for the small-print tests; Quillfeather is not a real company or product.
+
+1. The Agreement
+Quillfeather Labs LLC ("Quillfeather", "we", "us") provides the Quillfeather note-taking app (the "App").
+You must be 18 or older to use the App.
+
+2. Subscriptions
+Quillfeather Pro is billed yearly and will be automatically renewed for successive one-year terms.
+All subscription fees are final and non-refundable.
+Quillfeather reserves the right to increase subscription prices at any time.
+We will email you at least 30 days before a price increase applies to you.
+
+3. Your Notes
+You retain all rights in the notes you write.
+By publishing a note, you grant us a perpetual, irrevocable, worldwide licence to reproduce, adapt and distribute it.
+We may use your notes to train our machine-learning models.
+You can export all of your notes at any time.
+
+4. Privacy
+We may disclose your personal information to advertisers and marketing partners.
+We never sell your personal information.
+We share your personal data with service providers who process it on our behalf.
+We and our partners use cookies and similar technologies to show you interest-based ads.
+You can turn off personalised ads in Settings.
+
+5. Ending Your Account
+Quillfeather may deactivate your account for any reason, without prior notice.
+You may close your account at any time.
+
+6. Changes
+Quillfeather reserves the right to amend this Agreement at any time.
+By continuing to use the App after a change, you agree to the amended Agreement.
+
+7. Liability
+The App is provided "as is", without warranties of any kind.
+Under no circumstances will Quillfeather be liable for lost profits or lost notes.
+Our aggregate liability shall not exceed fifty euros.
+You agree to indemnify and hold harmless Quillfeather from any claim arising from your notes.
+
+8. Disputes
+All disputes will be settled exclusively through binding arbitration.
+You agree to bring claims only on an individual basis, and you waive any right to a jury trial.
+Nothing in these terms prevents you from reporting us to a consumer authority.
+This Agreement is governed by the laws of the State of Examplia.
+
+9. Contact
+Write to legal@quillfeather.example.
