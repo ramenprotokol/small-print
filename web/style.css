@@ -2,6 +2,30 @@
    in a small sans, highlighter over the clauses, a strip down the page edge.
    Paper white and ink black; the dark theme is a reading lamp. */
 
+/* Both faces ship with the site (web/fonts/, SIL Open Font License 1.1; see
+   THIRD-PARTY-NOTICES.txt), so a visit asks no third party for anything.
+   The build gives each file a content-hashed name beside this stylesheet. */
+@font-face {
+  font-family: "Libre Caslon Text"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/LibreCaslonText-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Libre Caslon Text"; font-style: italic; font-weight: 400; font-display: swap;
+  src: url("fonts/LibreCaslonText-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Libre Caslon Text"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("fonts/LibreCaslonText-Bold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Public Sans"; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url("fonts/PublicSans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Public Sans"; font-style: italic; font-weight: 400; font-display: swap;
+  src: url("fonts/PublicSans-Italic.woff2") format("woff2");
+}
+
 :root {
   --serif: "Libre Caslon Text", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: "Public Sans", "Helvetica Neue", Arial, sans-serif;
@@ -286,6 +310,11 @@ textarea::placeholder { color: var(--muted); font-style: italic; }
 .hi-title { font: 400 1rem/1.3 var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hi-when { font-size: 0.78rem; color: var(--muted); }
 .fine { font-size: 0.8rem; color: var(--muted); margin: 0.9rem 0 0; max-width: 30rem; }
+.forget {
+  margin-top: 0.6rem; padding: 0.2rem 0; cursor: pointer; font: 600 0.78rem/1.2 var(--sans);
+  color: var(--muted); background: none; border: 0; border-bottom: 1px solid var(--rule-strong);
+}
+.forget:hover { color: var(--ink); }
 
 /* -------------------------------------------------------------- result */
 .result { padding: 0.5rem 0 4rem; border-top: 3px double var(--rule-strong); }

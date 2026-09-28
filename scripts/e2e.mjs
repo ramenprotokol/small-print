@@ -183,8 +183,6 @@ async function inputLimits(base) {
 }
 
 // ----------------------------------------------------------------- browser
-const EXPECTED_OFFLINE = (p) => /fonts\.(googleapis|gstatic)\.com/.test(`${p.text} ${p.url ?? ''}`);
-
 async function paste(page, text) {
   await page.evaluate(`(() => { const t = document.querySelector('#paste'); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new Event('input')); document.querySelector('#read').click(); return true; })()`);
 }
@@ -308,8 +306,7 @@ async function browserChecks(chrome, base, { live }) {
       results.partial = { ...partial, healed: healed.label };
     }
 
-    const problems = page.problems.filter((p) => !EXPECTED_OFFLINE(p));
-    assert.deepEqual(problems, [], `${plan.name}: console errors / exceptions`);
+    assert.deepEqual(page.problems, [], `${plan.name}: console errors / exceptions`);
     results[plan.name] = { exhibit, pasted: { clauses: pasted.clauses, marks: pasted.marks } };
     await page.close();
   }

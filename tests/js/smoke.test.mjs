@@ -16,7 +16,7 @@ const read = (p) => readFileSync(join(DIST, p), 'utf8');
 test('dist/ exists with hashed assets that index.html references', () => {
   assert.ok(existsSync(join(DIST, 'index.html')), 'run npm run build first');
   const html = read('index.html');
-  const refs = [...html.matchAll(/(?:href|src)="(assets\/[^"]+)"/g)].map((m) => m[1]);
+  const refs = [...html.matchAll(/(?:href|src)="(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);
   assert.equal(refs.length, 2, 'one stylesheet and one module script');
   for (const r of refs) {
     assert.match(r, /^assets\/(app|style)\.[0-9a-f]{10}\.(js|css)$/);
@@ -35,6 +35,8 @@ test('_headers: strict CSP, long cache only for hashed assets', () => {
   assert.match(h, /worker-src 'self';/);
   assert.doesNotMatch(h, /unsafe-inline|'unsafe-eval'/);
   assert.match(h, /connect-src 'self'/);
+  assert.match(h, /style-src 'self';/);
+  assert.match(h, /font-src 'self';/);
   assert.match(h, /frame-ancestors 'none'/);
   const blocks = h.split(/\n(?=\S)/);
   const cached = blocks.filter((b) => /max-age=31536000/.test(b));
@@ -80,6 +82,31 @@ test('the on-device reader: Pyodide runtime and Python bundle, sizes stated on t
   const assets = readdirSync(join(DIST, 'assets'));
   const local = assets.find((f) => /^local\.[0-9a-f]{10}\.js$/.test(f));
   assert.match(read(`assets/${local}`), new RegExp(`new URL\\("\\./${runtime().worker.replace('.', '\\.')}"`));
+});
+
+test('fonts are served from this site, hashed, with their licences: no request to Google', () => {
+  const html = read('index.html');
+  const css = read(html.match(/href="(assets\/style\.[0-9a-f]{10}\.css)"/)[1]);
+  for (const [name, body] of [['index.html', html], ['style.css', css], ['_headers', read('_headers')]]) {
+    assert.doesNotMatch(body, /googleapis|gstatic|fonts\.google/, `${name} names no Google Fonts host`);
+  }
+  const faces = [...css.matchAll(/@font-face\s*\{([^}]+)\}/g)].map((m) => m[1]);
+  assert.equal(faces.length, 5, 'Libre Caslon Text (regular, italic, bold) and Public Sans (variable, italic)');
+  const files = faces.map((f) => /url\("([^"]+)"\)/.exec(f)[1]);
+  for (const f of files) {
+    assert.match(f, /^[A-Za-z-]+\.[0-9a-f]{10}\.woff2$/, `${f} is hashed and sits beside the stylesheet`);
+    assert.ok(existsSync(join(DIST, 'assets', f)), `${f} ships`);
+    assert.equal(readFileSync(join(DIST, 'assets', f)).subarray(0, 4).toString('latin1'), 'wOF2');
+  }
+  for (const f of faces) assert.match(f, /font-display:\s*swap/);
+  // The two faces the masthead needs first are preloaded, by their hashed names.
+  const preloads = [...html.matchAll(/<link rel="preload" href="assets\/([^"]+)" as="font" type="font\/woff2" crossorigin>/g)].map((m) => m[1]);
+  assert.equal(preloads.length, 2);
+  for (const p of preloads) assert.ok(files.includes(p), `${p} is one of the faces the stylesheet declares`);
+  const n = read('THIRD-PARTY-NOTICES.txt');
+  for (const needle of ['Libre Caslon Text', 'Public Sans', 'SIL OPEN FONT LICENSE Version 1.1', 'The Libre Caslon Text Project Authors', 'The Public Sans Project Authors']) {
+    assert.ok(n.includes(needle), needle);
+  }
 });
 
 test('THIRD-PARTY-NOTICES.txt ships with every runtime component and its licence', () => {
@@ -154,8 +181,8 @@ test('the static page loads and the exhibits work with no API at all', { skip: !
       await page.evaluate(`(() => { const t = document.querySelector('#paste'); t.value = 'We may terminate your account at any time.'; t.dispatchEvent(new Event('input')); document.querySelector('#read').click(); return true; })()`);
       await page.waitFor(`/Rule-based reading, no AI/.test(document.querySelector('#provenance').textContent)`, 60000);
       assert.equal(await page.evaluate(`document.querySelector('#doc mark.q').textContent`), 'We may terminate your account at any time');
-      // Only the expected failed /api/status request (and fonts, if offline) may log.
-      const unexpected = page.problems.filter((p) => !/\/api\/status|404|fonts\.(googleapis|gstatic)/.test(`${p.text} ${p.url ?? ''}`));
+      // Only the expected failed /api/status request may log: nothing else is fetched off this server.
+      const unexpected = page.problems.filter((p) => !/\/api\/status|404/.test(`${p.text} ${p.url ?? ''}`));
       assert.deepEqual(unexpected, []);
       await page.close();
     }

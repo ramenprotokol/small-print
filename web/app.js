@@ -536,6 +536,15 @@ function remember(doc) {
   renderHistory();
 }
 
+function forget() {
+  try {
+    localStorage.removeItem(HISTORY_KEY);
+  } catch {
+    // storage unavailable: there is nothing kept
+  }
+  renderHistory();
+}
+
 function renderHistory() {
   const list = store(HISTORY_KEY) || [];
   const box = $('#history');
@@ -1098,6 +1107,7 @@ function boot() {
   initTheme();
   initOffsets();
   $('#intake').addEventListener('submit', onSubmit);
+  $('#forget').addEventListener('click', forget);
   $('#paste').addEventListener('input', debounce(updatePlan, 120));
   document.addEventListener('keydown', onKey);
   $('#doc').addEventListener('mouseover', linkHover);

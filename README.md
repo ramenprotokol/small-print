@@ -155,7 +155,7 @@ No test ever calls the real API.
 
 | Piece | Size | Free-plan limit |
 | --- | --- | --- |
-| Page, exhibits, notices | about 20 files | 20,000 files per site; unlimited static requests |
+| Page, exhibits, fonts, notices | about 25 files | 20,000 files per site; unlimited static requests |
 | Pyodide runtime (`assets/pyodide-<hash>/`) | 13.5 MB in 5 files; the largest, `pyodide.asm.wasm`, is 9.6 MB | 25 MiB per file |
 | Python bundle (`assets/small_print.<hash>.zip`) | about 24 kB | |
 
@@ -212,8 +212,9 @@ npm install && npm run build
 ## Privacy and safety
 
 - **Rule readings never leave the device.** The text is read in a Web Worker in your browser tab. The page fetches only its own files (the runtime comes from this site, not a CDN), and a browser test checks that every request during a reading is a GET for those files.
-- The theme choice and your last five read documents are kept in this browser's `localStorage` only, and the page works without them.
-- A strict CSP: `script-src 'self' 'wasm-unsafe-eval'` (WebAssembly may be compiled; JavaScript `eval` may not), `worker-src 'self'`, no inline script or style, and no third-party scripts. Fonts come from Google Fonts.
+- The theme choice and your last five read documents (text included) are kept in this browser's `localStorage` only, and the page works without them. The page says so next to the list, and a "Forget these documents" button removes them; the browser test checks it.
+- **No third-party requests.** The fonts ship with the site too (`web/fonts/`, under the SIL Open Font License, listed in the third-party notices), so opening the page sends nothing, not even an IP address, to a font host. The browser test fails on any request that is not to the site's own origin.
+- A strict CSP: `script-src 'self' 'wasm-unsafe-eval'` (WebAssembly may be compiled; JavaScript `eval` may not), `worker-src 'self'`, `style-src 'self'`, `font-src 'self'`, no inline script or style, and no third-party anything.
 - Pasted HTML is parsed in an inert `DOMParser` document: scripts never run and resources never load. All rendering uses text nodes, never `innerHTML`.
 - The rule reader is bounded: the patterns cannot run past a sentence, and the page stops a worker that stalls or runs long.
 - **On a Worker with a key:** document text and API keys are never logged. The Worker logs one line per analysis with counts and the kind of failure, if any (`config`, `network`, `busy`, `upstream`, `timeout`, `interrupted`, `rejected`, `bad_output`), and a test checks this. Request bodies are read chunk by chunk and refused (413) as soon as they pass 512 KB. The cache is content-addressed and stores offsets, labels and readings, never the text; there is no listing endpoint, and only analyses in which at least 80% of the clauses got a verified reading are cached.
@@ -252,6 +253,6 @@ Built by Ramen Protocol ([ramenprotokol](https://github.com/ramenprotokol)) with
 - **CPython** 3.14.2 (PSF License), compiled into the runtime, with the notices for the software CPython incorporates (expat, libffi, zlib, libmpdec, mimalloc and others), and **HACL\*** (MIT), which CPython's hashlib uses.
 - **Emscripten**'s runtime (MIT or NCSA), **musl** libc (MIT) and **MiniLZ4** (MIT), which the runtime is built with.
 - **Zstandard** 1.5.7 (BSD), **bzip2** (bzip2 licence), **SQLite** 3.39.0 (public domain) and **XZ Utils** liblzma (public domain or 0BSD), which Pyodide links in.
-- **Fonts:** Libre Caslon Text and Public Sans are loaded from Google Fonts when the page opens, not shipped. Both are under the SIL Open Font License 1.1.
+- **Fonts:** Libre Caslon Text (Copyright 2012 The Libre Caslon Text Project Authors) and Public Sans (Copyright 2015 The Public Sans Project Authors), both under the SIL Open Font License 1.1, ship as the Latin-subset WOFF2 files Google Fonts serves, unmodified, from `web/fonts/`; their licence texts are in `licenses/` and in the notices.
 - **Worker only:** the Python Worker calls the model through the official Anthropic Python SDK, [`anthropic`](https://github.com/anthropics/anthropic-sdk-python) 1.8.0 (MIT, Copyright 2023 Anthropic, PBC). It runs on the server, vendored into `python_modules/` with its own dependencies, so none of it reaches visitors.
 - **Build and test tools** (wrangler, uv, pywrangler, pytest) never ship.

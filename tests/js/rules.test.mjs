@@ -2,7 +2,7 @@
 // served locally with its _headers applied (so the strict CSP is enforced),
 // the Python runtime is streamed slowly enough to watch the progress bar,
 // and a synthetic Terms of Service is pasted. Nothing reaches the network:
-// every request must be a GET to this local server (fonts aside).
+// every request must be a GET to this local server (the fonts included).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,8 +17,8 @@ const TERMS = readFileSync(join(ROOT, 'tests', 'fixtures', 'quillfeather-terms.t
 const chromePath = findChrome();
 const skip = !chromePath && 'Chrome not found (set CHROME_PATH)';
 // The only console noise allowed: the page asks /api/status (there is no
-// API on a static host, so this server answers 404) and loads Google Fonts.
-const expected = (p) => /\/api\/status|fonts\.(googleapis|gstatic)\.com/.test(`${p.text} ${p.url ?? ''}`);
+// API on a static host, so this server answers 404).
+const expected = (p) => /\/api\/status/.test(`${p.text} ${p.url ?? ''}`);
 
 function facts() {
   const meta = /<meta name="sp-runtime" content="([^"]+)">/.exec(readFileSync(join(DIST, 'index.html'), 'utf8'));
@@ -123,16 +123,26 @@ test('pasted terms are read on this device by Python, with verified quotes', { s
     await page.waitFor(`/limit is 60,000/.test(document.querySelector('#form-error').textContent)`);
     await paste(page, 'TERMS OF SERVICE\n\nPRIVACY POLICY');
     await page.waitFor(`/No clauses found/.test(document.querySelector('#form-error').textContent)`, 20000);
-    // Pasted HTML is converted in an inert document: its script never runs.
-    await paste(page, '<html><body><h1>Pasted Terms</h1><p>We may change these Terms at any time.</p><p>You can cancel at any time.</p><script>window.pwned = 1</script></body></html>');
+    // Pasted HTML is converted in an inert document: its script never runs,
+    // and neither do event handlers on elements or SVG; only text remains.
+    await paste(page, '<html><body><h1>Pasted Terms</h1><p>We may change these Terms at any time.</p><img src="x" onerror="window.pwned = 2"><svg onload="window.pwned = 3"></svg><p>You can cancel at any time.</p><script>window.pwned = 1</script></body></html>');
     await page.waitFor(`document.querySelector('#doc-title').textContent === 'Pasted Terms'`, 20000);
-    assert.equal(await page.evaluate(`window.pwned === 1`), false);
+    assert.equal(await page.evaluate(`typeof window.pwned`), 'undefined');
+    assert.equal(await page.evaluate(`document.querySelectorAll('#doc img, #doc svg, #doc script').length`), 0);
     assert.match(await page.evaluate(`document.querySelector('#notices').textContent`), /converted from HTML/);
 
-    // Nothing left this device: every request was a GET for the site's own files.
+    // Nothing left this device: every request was a GET for the site's own files, the fonts included.
     assert.ok(requests.every((x) => x.startsWith('GET ')), requests.filter((x) => !x.startsWith('GET ')).join(', '));
     assert.ok(!requests.some((x) => x.includes('/api/analyze')));
+    assert.ok(requests.some((x) => /^GET \/assets\/[A-Za-z-]+\.[0-9a-f]{10}\.woff2$/.test(x)), 'the fonts come from this server');
     assert.deepEqual(page.problems.filter((p) => !expected(p)), [], 'no console errors, no CSP violations');
+
+    // "Read before in this browser" can be forgotten: the button empties the
+    // list and removes the stored documents.
+    assert.equal(await page.evaluate(`document.querySelector('#history').hidden`), false);
+    await page.evaluate(`document.querySelector('#forget').click(), true`);
+    assert.deepEqual(await page.evaluate(`({ hidden: document.querySelector('#history').hidden, stored: localStorage.getItem('sp-history-2'), items: document.querySelectorAll('.history-item').length })`),
+      { hidden: true, stored: null, items: 0 });
     await page.close();
 
     // Phone width, dark, reduced motion: the runtime comes from the cache.

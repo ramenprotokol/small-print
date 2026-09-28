@@ -13,9 +13,9 @@ Steps:
    browser runs (local.py and what it imports, never the model code) into a
    content-hashed bundle. The worker learns both names, and the page learns
    the runtime's size, at build time.
-3. Copy web/ into dist/, giving JS and CSS content-hashed file names so they
-   can be cached for a long time safely (index.html, the demo JSON and
-   other unhashed files get no long cache).
+3. Copy web/ into dist/, giving JS, CSS and font files content-hashed names
+   so they can be cached for a long time safely (index.html, the demo JSON
+   and other unhashed files get no long cache).
 4. Point the page at the API: same origin by default, or the origin in
    SMALL_PRINT_API_ORIGIN (for a Pages front end talking to the Worker on
    another origin). The CSP's connect-src follows.
@@ -54,6 +54,16 @@ PYODIDE = ROOT / "node_modules" / "pyodide"
 # Each file is hashed after the files it names: the worker before local.js
 # (which starts it), lib.js and local.js before app.js (which imports them).
 HASHED = ("rules-worker.js", "local.js", "lib.js", "app.js", "style.css")
+# The two typefaces, served from this site (web/fonts/, OFL 1.1) so that a
+# visit asks no third party for anything. style.css and index.html name them
+# as "fonts/<file>"; the build rewrites those to the hashed copies in assets/.
+FONTS = (
+    "LibreCaslonText-Regular.woff2",
+    "LibreCaslonText-Italic.woff2",
+    "LibreCaslonText-Bold.woff2",
+    "PublicSans.woff2",
+    "PublicSans-Italic.woff2",
+)
 # What Pyodide loads at start-up: its two modules, the WebAssembly binary,
 # the standard library and the package lock file.
 RUNTIME_FILES = ("pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json")
@@ -152,13 +162,30 @@ def worker_source(body: str, runtime: dict) -> str:
     return _swap(body, 'const SIZES = { "pyodide.mjs": 0, "pyodide.asm.mjs": 0 };', f"const SIZES = {json.dumps(sizes)};", "rules-worker.js")
 
 
+def build_fonts(assets: Path) -> dict[str, str]:
+    """Copy each font under a content-hashed name. Returns file -> hashed name."""
+    names = {}
+    for name in FONTS:
+        data = (WEB / "fonts" / name).read_bytes()
+        if data[:4] != b"wOF2":
+            raise BuildError(f"web/fonts/{name} is not a WOFF2 file")
+        stem, ext = name.rsplit(".", 1)
+        names[name] = f"{stem}.{hashlib.sha256(data).hexdigest()[:10]}.{ext}"
+        (assets / names[name]).write_bytes(data)
+    return names
+
+
 def build_web(origin: str, runtime: dict) -> None:
     assets = DIST / "assets"
+    fonts = build_fonts(assets)
     names: dict[str, str] = {}
     for name in HASHED:
         body = (WEB / name).read_text(encoding="utf-8")
         if name == "rules-worker.js":
             body = worker_source(body, runtime)
+        if name == "style.css":
+            for font, hashed in fonts.items():
+                body = _swap(body, f'url("fonts/{font}")', f'url("{hashed}")', "style.css")
         for old, new in names.items():
             body = body.replace(f'"./{old}"', f'"./{new}"')
         stem, ext = name.rsplit(".", 1)
@@ -169,6 +196,10 @@ def build_web(origin: str, runtime: dict) -> None:
     html = (WEB / "index.html").read_text(encoding="utf-8")
     for name, hashed in names.items():
         html = html.replace(f'"{name}"', f'"assets/{hashed}"')
+    for font, hashed in fonts.items():
+        html = html.replace(f'"fonts/{font}"', f'"assets/{hashed}"')
+    if re.search(r"fonts\.(googleapis|gstatic)|\"fonts/", html):
+        raise BuildError("index.html still points at Google Fonts or an unhashed font")
     html = html.replace('<meta name="sp-api" content="">', f'<meta name="sp-api" content="{origin}">')
     facts = f'bytes={runtime["bytes"]} rules={len(RULES)} pyodide={runtime["pyodide"]} python={runtime["python"]}'
     html = _swap(html, '<meta name="sp-runtime" content="">', f'<meta name="sp-runtime" content="{facts}">', "index.html")
@@ -187,15 +218,37 @@ def build_web(origin: str, runtime: dict) -> None:
 NOTICE_HEAD = """THIRD-PARTY NOTICES: small print (the built site)
 
 small print's own code is MIT-licensed (LICENSE in the source repository).
-Everything third-party in this site is the Pyodide runtime, served from
+The third-party parts of this site are the Pyodide runtime, served from
 assets/{folder}/ and copied unmodified from the npm package "pyodide"
 {pyodide}: pyodide.mjs, pyodide.asm.mjs, pyodide.asm.wasm,
-python_stdlib.zip and pyodide-lock.json. It contains the software listed
-below. Fonts (Libre Caslon Text, Public Sans; SIL Open Font License 1.1) are
-loaded from Google Fonts when the page opens, not shipped here.
+python_stdlib.zip and pyodide-lock.json, which contains the software listed
+below; and two typefaces (Libre Caslon Text, Public Sans; SIL Open Font
+License 1.1), served from assets/ as WOFF2 files so that opening the page
+asks no third party for anything.
 
 Components
 ----------
+
+Fonts
+
+A. Libre Caslon Text (LibreCaslonText-Regular, -Italic and -Bold .woff2).
+   Licence: SIL Open Font License, Version 1.1 (full text below).
+   Copyright 2012 The Libre Caslon Text Project Authors
+   (https://github.com/impallari/Libre-Caslon-Text).
+   Source: https://github.com/google/fonts/tree/main/ofl/librecaslontext
+   The files are the Latin-subset WOFF2 builds that Google Fonts serves
+   (version 1.100), unmodified here.
+
+B. Public Sans (PublicSans.woff2, a variable font with the weight axis
+   100-900, and PublicSans-Italic.woff2).
+   Licence: SIL Open Font License, Version 1.1 (full text below).
+   Copyright 2015 The Public Sans Project Authors
+   (https://github.com/uswds/public-sans).
+   Source: https://github.com/google/fonts/tree/main/ofl/publicsans
+   The files are the Latin-subset WOFF2 builds that Google Fonts serves
+   (version 2.001), unmodified here.
+
+The Python runtime
 
 1. Pyodide {pyodide}
    Licence: Mozilla Public License 2.0 (full text below).
@@ -259,6 +312,8 @@ Full licence texts follow.
 """
 
 NOTICE_TEXTS = (
+    ("Libre Caslon Text: SIL Open Font License 1.1", "LibreCaslonText-OFL.txt"),
+    ("Public Sans: SIL Open Font License 1.1", "PublicSans-OFL.txt"),
     ("Mozilla Public License 2.0 (Pyodide)", "MPL-2.0.txt"),
     ("CPython {python}: LICENSE", "CPython-3.14.2-LICENSE.txt"),
     ("CPython: Licenses and Acknowledgements for Incorporated Software (Python 3.14 documentation)", "CPython-3.14-incorporated-software.txt"),
