@@ -1,6 +1,6 @@
 # Copy to .dev.vars (gitignored). Values here are Worker bindings for `wrangler dev` only.
 # They do NOT change which Cloudflare account wrangler deploys to.
-# Deploy ONLY with ~/RamenProtocol/_ops/infra/ramen-deploy.sh (see scripts/deploy.sh) — it refuses
+# Deploy ONLY through the owner's guarded deploy script (see scripts/deploy.sh) — it refuses
 # unless the Ramen account id and token are set, so the global wrangler login is never used.
 #
 # Leave ANTHROPIC_API_KEY unset to run in demo mode. Setting a real key locally

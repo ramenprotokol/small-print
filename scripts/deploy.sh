@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Owner-only deploy. Every Cloudflare command goes through the guarded Ramen
-# script, which refuses unless the Ramen Cloudflare account id and token are
-# configured, so the machine's global wrangler login is never used.
+# Owner-only deploy. Every Cloudflare command goes through the owner's guarded
+# deploy script, which refuses unless the Ramen Cloudflare account id and token
+# are configured, so the machine's global wrangler login is never used. Its path
+# comes from RAMEN_DEPLOY_GUARD.
 #
 #   scripts/deploy.sh setup    # once: D1 database, its migrations, the API key secret
 #   scripts/deploy.sh worker   # the Python Worker (API + the UI as static assets)
 #   scripts/deploy.sh pages    # the static site on Cloudflare Pages (the rule reader needs nothing else)
 set -euo pipefail
-GUARD="$HOME/RamenProtocol/_ops/infra/ramen-deploy.sh"
-[ -x "$GUARD" ] || { echo "Guarded deploy script not found; refusing to run." >&2; exit 1; }
+GUARD="${RAMEN_DEPLOY_GUARD:-}"
+[ -n "$GUARD" ] || { echo "RAMEN_DEPLOY_GUARD is not set (the path of the guarded deploy script); refusing to run." >&2; exit 1; }
+[ -x "$GUARD" ] || { echo "RAMEN_DEPLOY_GUARD does not point at an executable file; refusing to run." >&2; exit 1; }
 cd "$(dirname "$0")/.."
 
 # Use the wrangler pinned in package.json (Python Workers need a recent one).

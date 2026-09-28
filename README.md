@@ -190,20 +190,20 @@ A typical call is much smaller. A rough, unmeasured estimate: about 2,500 input 
 
 ## Deploying (owner only)
 
-The owner runs every Cloudflare command through the guarded script `~/RamenProtocol/_ops/infra/ramen-deploy.sh`, which refuses to run unless the Ramen Cloudflare account is configured, so the machine's global wrangler login is never used. `scripts/deploy.sh` wraps it and puts the wrangler pinned in `package.json` first on `PATH`.
+The owner runs every Cloudflare command through a guarded deploy script kept outside this repository, which refuses to run unless the project's own Cloudflare account is configured, so the machine's global wrangler login is never used. `scripts/deploy.sh` wraps it: it takes the guard's path from the `RAMEN_DEPLOY_GUARD` environment variable (and refuses to run if that is unset or not executable), and puts the wrangler pinned in `package.json` first on `PATH`.
 
 **The live site (rules, static):** build, then deploy `dist/` to Pages:
 
 ```sh
 npm install && npm run build
-~/RamenProtocol/_ops/infra/ramen-deploy.sh pages dist --project-name small-print --branch main
+"$RAMEN_DEPLOY_GUARD" pages dist --project-name small-print --branch main
 ```
 
 (`scripts/deploy.sh pages` does the same build and guarded deploy.) Nothing else is needed: no D1, no Durable Object, no secret.
 
 **The AI reader (optional):**
 
-1. `scripts/deploy.sh setup`, once. Through the guard (`ramen-deploy.sh run ...`) it creates the D1 database (`d1 create small-print-cache`), then stops so you can put the printed `database_id` in `wrangler.toml`. It then applies the migrations (`d1 migrations apply small-print-cache --remote`) and sets the secret (`secret put ANTHROPIC_API_KEY`). Press Ctrl-C at the secret prompt to stay without a key.
+1. `scripts/deploy.sh setup`, once. Through the guard (`"$RAMEN_DEPLOY_GUARD" run ...`) it creates the D1 database (`d1 create small-print-cache`), then stops so you can put the printed `database_id` in `wrangler.toml`. It then applies the migrations (`d1 migrations apply small-print-cache --remote`) and sets the secret (`secret put ANTHROPIC_API_KEY`). Press Ctrl-C at the secret prompt to stay without a key.
 2. `scripts/deploy.sh worker`. This deploys the API and serves the UI from the same origin.
 3. Optional: to keep the UI on Pages and talk to that Worker, build with `SMALL_PRINT_API_ORIGIN=https://<worker host>` so the page (and its CSP `connect-src`) points at the Worker, and list the Pages origin in the Worker's `ALLOWED_ORIGINS`.
 
